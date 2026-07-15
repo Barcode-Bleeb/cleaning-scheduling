@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sparkle · Cleaning planner</title>
+<meta name="description" content="A tiny cleaning planner for two.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Sparkle">
+<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<style>
+:root {
+  color-scheme: light;
+  --page:           #f9f9f7;
+  --surface:        #fcfcfb;
+  --ink:            #0b0b0b;
+  --ink-2:          #52514e;
+  --muted:          #898781;
+  --hairline:       #e1e0d9;
+  --border:         rgba(11,11,11,0.10);
+  --p1:             #2a78d6;   /* person 1 — blue  */
+  --p2:             #008300;   /* person 2 — green */
+  --accent:         #2a78d6;
+  --accent-ink:     #ffffff;
+  --good:           #006300;
+  --danger:         #d03b3b;
+  --danger-soft:    rgba(208,59,59,0.10);
+  --wash:           rgba(11,11,11,0.045);
+  --sheet-shadow:   0 -8px 40px rgba(0,0,0,0.18);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page:         #0d0d0d;
+    --surface:      #1a1a19;
+    --ink:          #ffffff;
+    --ink-2:        #c3c2b7;
+    --muted:        #898781;
+    --hairline:     #2c2c2a;
+    --border:       rgba(255,255,255,0.10);
+    --p1:           #3987e5;
+    --p2:           #008300;
+    --accent:       #3987e5;
+    --good:         #0ca30c;
+    --danger:       #e66767;
+    --danger-soft:  rgba(230,103,103,0.14);
+    --wash:         rgba(255,255,255,0.06);
+    --sheet-shadow: 0 -8px 40px rgba(0,0,0,0.5);
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--page);
+  color: var(--ink);
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+input, select, textarea {
+  font: inherit; color: var(--ink);
+  font-size: 16px; /* prevents iOS zoom */
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 10px 12px;
+  width: 100%;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+
+/* ---------- layout ---------- */
+#app { display: none; min-height: 100dvh; }
+header.topbar {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--page);
+  padding: calc(env(safe-area-inset-top) + 12px) 16px 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--hairline);
+}
+header.topbar h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+main { padding: 16px 16px calc(env(safe-area-inset-bottom) + 84px); max-width: 640px; margin: 0 auto; }
+nav.tabs {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+  display: flex;
+  background: var(--page);
+  border-top: 1px solid var(--hairline);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+nav.tabs button {
+  flex: 1; padding: 8px 0 6px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  color: var(--muted); font-size: 11px; font-weight: 600;
+}
+nav.tabs button .glyph { font-size: 22px; line-height: 1; }
+nav.tabs button.active { color: var(--accent); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 11px 16px; border-radius: 12px; font-weight: 600; font-size: 15px;
+  background: var(--wash);
+}
+.btn:active { opacity: 0.7; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); }
+.btn.danger { background: var(--danger-soft); color: var(--danger); }
+.btn.block { width: 100%; }
+.btn.small { padding: 7px 12px; font-size: 13px; border-radius: 10px; }
+.add-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 22px; font-weight: 600; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ---------- schedule ---------- */
+.section-label {
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); margin: 20px 4px 8px;
+}
+.section-label:first-child { margin-top: 4px; }
+.section-label.overdue { color: var(--danger); }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.task-row {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; text-align: left;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.task-row:last-child { border-bottom: none; }
+.task-row:active { background: var(--wash); }
+.task-icon {
+  width: 40px; height: 40px; flex: none;
+  border-radius: 50%; background: var(--wash);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+  border: 2px solid var(--muted);
+}
+.task-icon.p1 { border-color: var(--p1); }
+.task-icon.p2 { border-color: var(--p2); }
+.task-main { flex: 1; min-width: 0; }
+.task-title { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-sub { font-size: 12.5px; color: var(--ink-2); margin-top: 1px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.dot.p1 { background: var(--p1); }
+.dot.p2 { background: var(--p2); }
+.task-date { font-size: 12.5px; font-weight: 600; color: var(--ink-2); text-align: right; flex: none; }
+.task-date .overdue { color: var(--danger); }
+.badge {
+  font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+  background: var(--wash); color: var(--ink-2);
+}
+.badge.snooze { background: var(--danger-soft); color: var(--danger); }
+.done-row { opacity: 0.75; }
+.done-row .task-title { text-decoration: line-through; }
+.empty {
+  text-align: center; color: var(--muted); padding: 48px 24px; font-size: 14.5px; line-height: 1.5;
+}
+.empty .big { font-size: 40px; display: block; margin-bottom: 10px; }
+
+/* ---------- sheet / modal ---------- */
+.overlay {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(0,0,0,0.4);
+  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.overlay.show { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  background: var(--page);
+  border-radius: 18px 18px 0 0;
+  box-shadow: var(--sheet-shadow);
+  transform: translateY(105%); transition: transform 0.25s ease;
+  max-height: 88dvh; overflow-y: auto;
+  padding: 8px 18px calc(env(safe-area-inset-bottom) + 18px);
+  max-width: 640px; margin: 0 auto;
+}
+.sheet.show { transform: translateY(0); }
+.sheet .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--hairline); margin: 4px auto 12px; }
+.sheet h2 { font-size: 18px; margin-bottom: 14px; }
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 5px; }
+.field .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.row2 { display: flex; gap: 10px; }
+.row2 > * { flex: 1; }
+.seg { display: flex; background: var(--wash); border-radius: 11px; padding: 3px; gap: 3px; }
+.seg button {
+  flex: 1; padding: 8px 4px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--ink-2);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.seg button.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chips button {
+  padding: 7px 11px; border-radius: 999px; background: var(--wash);
+  font-size: 14px; font-weight: 600; color: var(--ink-2);
+  border: 1.5px solid transparent;
+}
+.chips button.active { border-color: var(--accent); color: var(--ink); background: var(--surface); }
+.icon-grid { display: flex; gap: 6px; flex-wrap: wrap; }
+.icon-grid button {
+  width: 44px; height: 44px; font-size: 22px; border-radius: 10px; background: var(--wash);
+  border: 2px solid transparent;
+}
+.icon-grid button.active { border-color: var(--accent); background: var(--surface); }
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.switch-row .lab { font-size: 15px; font-weight: 600; }
+.switch-row .sub { font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+.toggle { position: relative; width: 50px; height: 30px; flex: none; }
+.toggle input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; }
+.toggle .knob {
+  position: absolute; inset: 0; border-radius: 999px; background: var(--hairline); transition: background 0.15s;
+}
+.toggle .knob::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transition: left 0.15s;
+}
+.toggle input:checked + .knob { background: var(--good); }
+.toggle input:checked + .knob::after { left: 23px; }
+.action-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.action-list .btn { justify-content: flex-start; font-size: 16px; padding: 13px 16px; }
+
+/* ---------- stats ---------- */
+.filter-row { display: flex; margin-bottom: 14px; }
+.filter-row .seg { flex: 1; }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.tile {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  padding: 12px 12px 10px;
+}
+.tile .val { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+.tile .lab { font-size: 12px; color: var(--ink-2); margin-top: 2px; line-height: 1.25; }
+.panel {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  padding: 14px; margin-top: 12px;
+}
+.panel h3 { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+.panel h3 .sub { font-weight: 500; color: var(--muted); font-size: 12px; }
+.legend { display: flex; gap: 14px; margin-top: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+.balance { display: flex; height: 14px; border-radius: 7px; overflow: hidden; gap: 2px; background: var(--wash); }
+.balance div { height: 100%; }
+.balance .b1 { background: var(--p1); border-radius: 7px 0 0 7px; }
+.balance .b2 { background: var(--p2); border-radius: 0 7px 7px 0; }
+.balance-labels { display: flex; justify-content: space-between; margin-top: 7px; font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+.pcards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.pcard { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px; }
+.pcard .name { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+.pcard .stat { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-2); padding: 3px 0; }
+.pcard .stat b { color: var(--ink); font-weight: 700; }
+.weeks { display: flex; align-items: flex-end; gap: 6px; height: 120px; margin-top: 4px; }
+.week-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 0; height: 100%; position: relative; }
+.week-col .total { font-size: 11px; font-weight: 600; color: var(--ink-2); margin-bottom: 3px; }
+.week-col .seg1, .week-col .seg2 { width: 100%; max-width: 26px; }
+.week-col .seg2 { background: var(--p2); border-radius: 4px 4px 0 0; }
+.week-col .seg1 { background: var(--p1); border-radius: 4px 4px 0 0; }
+.week-col .seg2 + .seg1 { margin-top: 2px; border-radius: 0; }
+.week-labels { display: flex; gap: 6px; margin-top: 6px; border-top: 1px solid var(--hairline); padding-top: 5px; }
+.week-labels span { flex: 1; text-align: center; font-size: 10.5px; color: var(--muted); }
+.tip {
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: var(--ink); color: var(--page);
+  font-size: 12px; padding: 6px 9px; border-radius: 8px; white-space: nowrap; z-index: 5;
+}
+table.stats { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.stats th {
+  text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); font-weight: 700; padding: 4px 6px; border-bottom: 1px solid var(--hairline);
+}
+table.stats th:first-child { text-align: left; }
+table.stats td { padding: 8px 6px; border-bottom: 1px solid var(--hairline); text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+table.stats tr:last-child td { border-bottom: none; }
+table.stats td:first-child { text-align: left; color: var(--ink); font-weight: 600; }
+table.stats .th-dot { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ---------- settings ---------- */
+.settings-group { margin-bottom: 22px; }
+.settings-group h3 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 4px 8px; }
+.settings-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+.settings-card p { font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+.settings-card .field:last-child { margin-bottom: 0; }
+textarea.code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; height: 110px; }
+
+/* ---------- setup ---------- */
+#setup { display: none; min-height: 100dvh; padding: calc(env(safe-area-inset-top) + 40px) 24px 40px; max-width: 480px; margin: 0 auto; }
+#setup .hero { text-align: center; margin-bottom: 28px; }
+#setup .hero .mark { font-size: 56px; }
+#setup h1 { font-size: 26px; margin-top: 10px; letter-spacing: -0.01em; }
+#setup .hero p { color: var(--ink-2); margin-top: 8px; font-size: 15px; line-height: 1.5; }
+
+/* ---------- toast ---------- */
+#toast {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 88px); z-index: 90;
+  transform: translateX(-50%) translateY(16px);
+  background: var(--ink); color: var(--page);
+  font-size: 14px; font-weight: 600; padding: 10px 18px; border-radius: 999px;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+  white-space: nowrap;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- ============ first-run setup ============ -->
+<div id="setup">
+  <div class="hero">
+    <span class="mark">🧽</span>
+    <h1>Sparkle</h1>
+    <p>A tiny cleaning planner for the two of you.<br>Plan chores, take turns, keep score.</p>
+  </div>
+  <div class="field">
+    <label for="setup-p1">Your name</label>
+    <input id="setup-p1" type="text" autocomplete="off" placeholder="e.g. Lisa">
+  </div>
+  <div class="field">
+    <label for="setup-p2">Your partner's name</label>
+    <input id="setup-p2" type="text" autocomplete="off" placeholder="e.g. Sam">
+  </div>
+  <div class="field switch-row">
+    <div>
+      <div class="lab">Add starter chores</div>
+      <div class="sub">A ready-made set of common recurring tasks</div>
+    </div>
+    <label class="toggle"><input id="setup-seed" type="checkbox" checked><span class="knob"></span></label>
+  </div>
+  <button class="btn primary block" style="margin-top:12px" onclick="finishSetup()">Let's go ✨</button>
+</div>
+
+<!-- ============ app shell ============ -->
+<div id="app">
+  <header class="topbar">
+    <h1 id="page-title">Schedule</h1>
+    <button class="add-btn" id="add-btn" onclick="openTaskForm()" aria-label="Add task">+</button>
+  </header>
+
+  <main>
+    <div id="view-schedule"></div>
+    <div id="view-stats" class="hidden"></div>
+    <div id="view-settings" class="hidden"></div>
+  </main>
+
+  <nav class="tabs">
+    <button data-tab="schedule" class="active" onclick="switchTab('schedule')"><span class="glyph">🗓️</span>Schedule</button>
+    <button data-tab="stats" onclick="switchTab('stats')"><span class="glyph">📊</span>Stats</button>
+    <button data-tab="settings" onclick="switchTab('settings')"><span class="glyph">⚙️</span>Settings</button>
+  </nav>
+</div>
+
+<div class="overlay" id="overlay" onclick="closeSheet()"></div>
+<div class="sheet" id="sheet"><div class="grab"></div><div id="sheet-body"></div></div>
+<div id="toast" role="status"></div>
+
+<script>
+"use strict";
+/* ================= state ================= */
+const KEY = "sparkle.v1";
+const ICONS = ["🧹","🧽","🧺","🍽️","🚽","🛁","🛏️","🪟","🌿","🗑️","🐕","👕","🧊","🚗","🪣","✨"];
+const REPEATS = [
+  { id: "",     label: "Never" },
+  { id: "1d",   label: "Every day" },
+  { id: "2d",   label: "Every 2 days" },
+  { id: "1w",   label: "Every week" },
+  { id: "2w",   label: "Every 2 weeks" },
+  { id: "1m",   label: "Every month" },
+  { id: "2m",   label: "Every 2 months" },
+  { id: "3m",   label: "Every 3 months" },
+  { id: "6m",   label: "Every 6 months" },
+];
+const STARTERS = [
+  { title: "Vacuum living room",  icon: "🧹", repeat: "1w", alternate: true  },
+  { title: "Clean bathroom",      icon: "🛁", repeat: "1w", alternate: true  },
+  { title: "Clean toilet",        icon: "🚽", repeat: "1w", alternate: true  },
+  { title: "Change bed sheets",   icon: "🛏️", repeat: "2w", alternate: true  },
+  { title: "Kitchen deep clean",  icon: "🍽️", repeat: "2w", alternate: true  },
+  { title: "Take out trash",      icon: "🗑️", repeat: "1w", alternate: true  },
+  { title: "Water the plants",    icon: "🌿", repeat: "1w", alternate: false },
+  { title: "Clean windows",       icon: "🪟", repeat: "2m", alternate: true  },
+];
+
+let state = load();
+let activeTab = "schedule";
+let editingId = null;   // task being edited in the form
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { /* corrupted -> start fresh */ }
+  return { version: 1, people: { p1: { name: "" }, p2: { name: "" } }, tasks: [], history: [], postponeLog: [] };
+}
+function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
+function uid() { return (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(36).slice(2)); }
+
+/* ================= dates ================= */
+function iso(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function todayIso() { return iso(new Date()); }
+function fromIso(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
+function addDays(s, n) { const d = fromIso(s); d.setDate(d.getDate() + n); return iso(d); }
+function daysBetween(a, b) { return Math.round((fromIso(b) - fromIso(a)) / 864e5); }
+function applyRepeat(dateIso, repeat) {
+  const n = parseInt(repeat, 10);
+  const unit = repeat.slice(-1);
+  const d = fromIso(dateIso);
+  if (unit === "d") d.setDate(d.getDate() + n);
+  if (unit === "w") d.setDate(d.getDate() + n * 7);
+  if (unit === "m") d.setMonth(d.getMonth() + n);
+  return iso(d);
+}
+function humanDate(s) {
+  const today = todayIso();
+  const diff = daysBetween(today, s);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Tomorrow";
+  if (diff === -1) return "Yesterday";
+  const d = fromIso(s);
+  const wd = d.toLocaleDateString(undefined, { weekday: "short" });
+  if (diff > 1 && diff < 7) return wd;
+  return wd + " " + d.getDate() + " " + d.toLocaleDateString(undefined, { month: "short" });
+}
+function mondayOf(s) { const d = fromIso(s); const off = (d.getDay() + 6) % 7; d.setDate(d.getDate() - off); return iso(d); }
+
+/* ================= helpers ================= */
+function esc(t) { return String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function pname(pid) { return state.people[pid]?.name || "?"; }
+function other(pid) { return pid === "p1" ? "p2" : "p1"; }
+function repeatLabel(id) { return (REPEATS.find(r => r.id === id) || REPEATS[0]).label; }
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+/* ================= sheet ================= */
+function openSheet(html) {
+  document.getElementById("sheet-body").innerHTML = html;
+  document.getElementById("overlay").classList.add("show");
+  document.getElementById("sheet").classList.add("show");
+}
+function closeSheet() {
+  document.getElementById("overlay").classList.remove("show");
+  document.getElementById("sheet").classList.remove("show");
+}
+
+/* ================= tabs ================= */
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll("nav.tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  document.getElementById("view-schedule").classList.toggle("hidden", tab !== "schedule");
+  document.getElementById("view-stats").classList.toggle("hidden", tab !== "stats");
+  document.getElementById("view-settings").classList.toggle("hidden", tab !== "settings");
+  document.getElementById("page-title").textContent = { schedule: "Schedule", stats: "Stats", settings: "Settings" }[tab];
+  document.getElementById("add-btn").style.visibility = tab === "schedule" ? "visible" : "hidden";
+  render();
+}
+
+/* ================= setup ================= */
+function boot() {
+  if (!state.people.p1.name) {
+    document.getElementById("setup").style.display = "block";
+  } else {
+    document.getElementById("app").style.display = "block";
+    render();
+  }
+}
+function finishSetup() {
+  const n1 = document.getElementById("setup-p1").value.trim();
+  const n2 = document.getElementById("setup-p2").value.trim();
+  if (!n1 || !n2) { toast("Please fill in both names"); return; }
+  state.people.p1.name = n1;
+  state.people.p2.name = n2;
+  if (document.getElementById("setup-seed").checked) seedStarters();
+  save();
+  document.getElementById("setup").style.display = "none";
+  document.getElementById("app").style.display = "block";
+  render();
+}
+function seedStarters() {
+  const existing = new Set(state.tasks.map(t => t.title.toLowerCase()));
+  STARTERS.forEach((s, i) => {
+    if (existing.has(s.title.toLowerCase())) return;
+    const date = addDays(todayIso(), i % 7); // spread over the coming week
+    state.tasks.push({
+      id: uid(), title: s.title, icon: s.icon,
+      person: i % 2 === 0 ? "p1" : "p2",
+      date, firstDate: date, postpones: 0,
+      repeat: s.repeat, alternate: s.alternate, notes: "",
+    });
+  });
+}
+
+/* ================= schedule view ================= */
+function render() {
+  if (activeTab === "schedule") renderSchedule();
+  if (activeTab === "stats") renderStats();
+  if (activeTab === "settings") renderSettings();
+}
+
+function renderSchedule() {
+  const el = document.getElementById("view-schedule");
+  const today = todayIso();
+  const tasks = [...state.tasks].sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
+
+  const buckets = [
+    { key: "overdue", label: "Overdue", cls: "overdue", items: [] },
+    { key: "today", label: "Today", items: [] },
+    { key: "tomorrow", label: "Tomorrow", items: [] },
+    { key: "week", label: "Next 7 days", items: [] },
+    { key: "later", label: "Later", items: [] },
+  ];
+  for (const t of tasks) {
+    const d = daysBetween(today, t.date);
+    if (d < 0) buckets[0].items.push(t);
+    else if (d === 0) buckets[1].items.push(t);
+    else if (d === 1) buckets[2].items.push(t);
+    else if (d < 8) buckets[3].items.push(t);
+    else buckets[4].items.push(t);
+  }
+
+  let html = "";
+  if (!tasks.length) {
+    html += `<div class="empty"><span class="big">🫧</span>No chores planned.<br>Tap <b>+</b> to plan your first task.</div>`;
+  }
+  for (const b of buckets) {
+    if (!b.items.length) continue;
+    html += `<div class="section-label ${b.cls || ""}">${b.label}</div><div class="card">`;
+    html += b.items.map(taskRow).join("");
+    html += `</div>`;
+  }
+
+  // recently completed (last 5), with undo
+  const recent = [...state.history].slice(-5).reverse();
+  if (recent.length) {
+    html += `<div class="section-label">Recently done</div><div class="card">`;
+    html += recent.map(h => `
+      <div class="task-row done-row">
+        <div class="task-icon ${h.person}">${h.icon || "✨"}</div>
+        <div class="task-main">
+          <div class="task-title">${esc(h.title)}</div>
+          <div class="task-sub"><span class="dot ${h.person}"></span>${esc(pname(h.person))} · ${humanDate(h.completedDate)}${h.onFirst ? " · on time ✓" : ""}</div>
+        </div>
+        <button class="btn small" onclick="undoComplete('${h.id}')">Undo</button>
+      </div>`).join("");
+    html += `</div>`;
+  }
+  el.innerHTML = html;
+}
+
+function taskRow(t) {
+  const overdue = t.date < todayIso();
+  return `
+    <button class="task-row" onclick="openTaskActions('${t.id}')">
+      <div class="task-icon ${t.person}">${t.icon}</div>
+      <div class="task-main">
+        <div class="task-title">${esc(t.title)}</div>
+        <div class="task-sub">
+          <span class="dot ${t.person}"></span>${esc(pname(t.person))}
+          ${t.repeat ? `· 🔁 ${repeatLabel(t.repeat).toLowerCase()}` : ""}
+          ${t.postpones ? `<span class="badge snooze">moved ×${t.postpones}</span>` : ""}
+        </div>
+      </div>
+      <div class="task-date"><span class="${overdue ? "overdue" : ""}">${humanDate(t.date)}</span></div>
+    </button>`;
+}
+
+/* ================= task actions ================= */
+function openTaskActions(id) {
+  const t = state.tasks.find(x => x.id === id);
+  if (!t) return;
+  openSheet(`
+    <h2>${t.icon} ${esc(t.title)}</h2>
+    <p style="font-size:13.5px;color:var(--ink-2);margin:-6px 0 14px">
+      ${esc(pname(t.person))} · ${humanDate(t.date)}${t.repeat ? " · " + repeatLabel(t.repeat).toLowerCase() : ""}${t.postpones ? ` · postponed ${t.postpones}×` : ""}
+    </p>
+    <div class="action-list">
+      <button class="btn primary" onclick="openComplete('${t.id}')">✅&nbsp; Mark as done</button>
+      <button class="btn" onclick="openPostpone('${t.id}')">📆&nbsp; Postpone</button>
+      <button class="btn" onclick="openTaskForm('${t.id}')">✏️&nbsp; Edit</button>
+      <button class="btn danger" onclick="deleteTask('${t.id}')">🗑️&nbsp; Delete</button>
+    </div>`);
+}
+
+function deleteTask(id) {
+  const t = state.tasks.find(x => x.id === id);
+  if (!t) return;
+  if (!confirm(`Delete “${t.title}”? This removes the planned task (history is kept).`)) return;
+  state.tasks = state.tasks.filter(x => x.id !== id);
+  save(); closeSheet(); render();
+  toast("Task deleted");
+}
+
+/* ---- complete ---- */
+let completeCtx = null;
+function openComplete(id) {
+  const t = state.tasks.find(x => x.id === id);
+  if (!t) return;
+  completeCtx = { id, person: t.person };
+  openSheet(`
+    <h2>Nice! Who did it?</h2>
+    <div class="field">
+      <div class="seg" id="who-seg">
+        <button data-p="p1" class="${t.person === "p1" ? "active" : ""}" onclick="pickWho('p1')"><span class="dot p1"></span>${esc(pname("p1"))}</button>
+        <button data-p="p2" class="${t.person === "p2" ? "active" : ""}" onclick="pickWho('p2')"><span class="dot p2"></span>${esc(pname("p2"))}</button>
+      </div>
+    </div>
+    <div class="field">
+      <label for="done-date">Done on</label>
+      <input type="date" id="done-date" value="${todayIso()}" max="${todayIso()}">
+    </div>
+    <button class="btn primary block" onclick="confirmComplete()">Mark as done ✅</button>`);
+}
+function pickWho(p) {
+  completeCtx.person = p;
+  document.querySelectorAll("#who-seg button").forEach(b => b.classList.toggle("active", b.dataset.p === p));
+}
+function confirmComplete() {
+  const t = state.tasks.find(x => x.id === completeCtx.id);
+  if (!t) return;
+  const completedDate = document.getElementById("done-date").value || todayIso();
+  const person = completeCtx.person;
+  const entry = {
+    id: uid(), title: t.title, icon: t.icon, person,
+    firstDate: t.firstDate, plannedDate: t.date, completedDate,
+    postpones: t.postpones,
+    onFirst: t.postpones === 0 && completedDate <= t.firstDate,
+    restore: { ...t }, spawnedId: null,
+  };
+  state.tasks = state.tasks.filter(x => x.id !== t.id);
+  if (t.repeat) {
+    let next = applyRepeat(t.date, t.repeat);
+    while (next <= todayIso()) next = applyRepeat(next, t.repeat);
+    const nt = {
+      ...t, id: uid(), date: next, firstDate: next, postpones: 0,
+      person: t.alternate ? other(person) : t.person,
+    };
+    entry.spawnedId = nt.id;
+    state.tasks.push(nt);
+  }
+  state.history.push(entry);
+  save(); closeSheet(); render();
+  toast(entry.onFirst ? "Done — right on schedule ✨" : "Done ✅");
+}
+function undoComplete(hid) {
+  const i = state.history.findIndex(h => h.id === hid);
+  if (i < 0) return;
+  const h = state.history[i];
+  state.history.splice(i, 1);
+  if (h.spawnedId) state.tasks = state.tasks.filter(t => t.id !== h.spawnedId);
+  if (h.restore && !state.tasks.some(t => t.id === h.restore.id)) state.tasks.push(h.restore);
+  save(); render();
+  toast("Undone");
+}
+
+/* ---- postpone ---- */
+function openPostpone(id) {
+  const t = state.tasks.find(x => x.id === id);
+  if (!t) return;
+  const base = t.date < todayIso() ? todayIso() : t.date;
+  openSheet(`
+    <h2>Postpone “${esc(t.title)}”</h2>
+    <div class="field">
+      <div class="chips">
+        <button onclick="doPostpone('${id}','${addDays(base, 1)}')">+1 day</button>
+        <button onclick="doPostpone('${id}','${addDays(base, 2)}')">+2 days</button>
+        <button onclick="doPostpone('${id}','${addDays(base, 7)}')">+1 week</button>
+      </div>
+    </div>
+    <div class="field">
+      <label for="postpone-date">Or pick a date</label>
+      <input type="date" id="postpone-date" value="${addDays(base, 1)}" min="${todayIso()}">
+    </div>
+    <button class="btn primary block" onclick="doPostpone('${id}', document.getElementById('postpone-date').value)">Move task 📆</button>
+    <p class="hint" style="font-size:12px;color:var(--muted);margin-top:10px">Postponing is counted in your stats. To silently change a date, use Edit instead.</p>`);
+}
+function doPostpone(id, newDate) {
+  const t = state.tasks.find(x => x.id === id);
+  if (!t || !newDate) return;
+  state.postponeLog.push({ when: todayIso(), title: t.title, person: t.person, from: t.date, to: newDate });
+  t.postpones++;
+  t.date = newDate;
+  save(); closeSheet(); render();
+  toast(`Moved to ${humanDate(newDate)}`);
+}
+
+/* ---- add / edit form ---- */
+let formSel = { icon: ICONS[0], person: "p1" };
+function openTaskForm(id) {
+  editingId = id || null;
+  const t = id ? state.tasks.find(x => x.id === id) : null;
+  formSel = { icon: t ? t.icon : ICONS[0], person: t ? t.person : "p1" };
+  openSheet(`
+    <h2>${t ? "Edit task" : "New task"}</h2>
+    <div class="field">
+      <label for="f-title">Task</label>
+      <input type="text" id="f-title" placeholder="e.g. Vacuum living room" value="${t ? esc(t.title) : ""}" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Icon</label>
+      <div class="icon-grid" id="f-icons">
+        ${ICONS.map(ic => `<button class="${ic === formSel.icon ? "active" : ""}" onclick="pickIcon(this,'${ic}')">${ic}</button>`).join("")}
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label for="f-date">Planned date</label>
+        <input type="date" id="f-date" value="${t ? t.date : todayIso()}">
+      </div>
+      <div class="field">
+        <label for="f-repeat">Repeat</label>
+        <select id="f-repeat" onchange="document.getElementById('f-alt-row').style.display=this.value?'flex':'none'">
+          ${REPEATS.map(r => `<option value="${r.id}" ${t && t.repeat === r.id ? "selected" : ""}>${r.label}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label>Assigned to</label>
+      <div class="seg" id="f-person">
+        <button data-p="p1" class="${formSel.person === "p1" ? "active" : ""}" onclick="pickPerson('p1')"><span class="dot p1"></span>${esc(pname("p1"))}</button>
+        <button data-p="p2" class="${formSel.person === "p2" ? "active" : ""}" onclick="pickPerson('p2')"><span class="dot p2"></span>${esc(pname("p2"))}</button>
+      </div>
+    </div>
+    <div class="field switch-row" id="f-alt-row" style="display:${t && t.repeat || (!t && false) ? "flex" : "none"}">
+      <div>
+        <div class="lab">Take turns 🔄</div>
+        <div class="sub">Next occurrence goes to the other person</div>
+      </div>
+      <label class="toggle"><input id="f-alt" type="checkbox" ${t && t.alternate ? "checked" : ""}><span class="knob"></span></label>
+    </div>
+    <div class="field">
+      <label for="f-notes">Notes <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+      <input type="text" id="f-notes" placeholder="e.g. don't forget behind the couch" value="${t ? esc(t.notes || "") : ""}" autocomplete="off">
+    </div>
+    ${t ? `<p class="hint" style="font-size:12px;color:var(--muted);margin:-4px 0 12px">Changing the date here does <b>not</b> count as a postpone.</p>` : ""}
+    <button class="btn primary block" onclick="saveTaskForm()">${t ? "Save changes" : "Add task"}</button>`);
+  if (!t) setTimeout(() => document.getElementById("f-title").focus(), 300);
+}
+function pickIcon(btn, ic) {
+  formSel.icon = ic;
+  document.querySelectorAll("#f-icons button").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+}
+function pickPerson(p) {
+  formSel.person = p;
+  document.querySelectorAll("#f-person button").forEach(b => b.classList.toggle("active", b.dataset.p === p));
+}
+function saveTaskForm() {
+  const title = document.getElementById("f-title").value.trim();
+  const date = document.getElementById("f-date").value;
+  const repeat = document.getElementById("f-repeat").value;
+  const alternate = document.getElementById("f-alt").checked;
+  const notes = document.getElementById("f-notes").value.trim();
+  if (!title) { toast("Give the task a name"); return; }
+  if (!date) { toast("Pick a date"); return; }
+  if (editingId) {
+    const t = state.tasks.find(x => x.id === editingId);
+    if (t) {
+      Object.assign(t, { title, icon: formSel.icon, person: formSel.person, repeat, alternate, notes });
+      if (t.date !== date) { t.date = date; t.firstDate = date; t.postpones = 0; } // edited date = new plan
+    }
+    toast("Task updated");
+  } else {
+    state.tasks.push({
+      id: uid(), title, icon: formSel.icon, person: formSel.person,
+      date, firstDate: date, postpones: 0, repeat, alternate, notes,
+    });
+    toast("Task planned 📌");
+  }
+  save(); closeSheet(); render();
+}
+
+/* ================= stats ================= */
+let statsRange = "all"; // all | 90 | 30 | 7
+function setRange(r) { statsRange = r; renderStats(); }
+function inRange(dateIso) {
+  if (statsRange === "all") return true;
+  return daysBetween(dateIso, todayIso()) < Number(statsRange);
+}
+
+function renderStats() {
+  const el = document.getElementById("view-stats");
+  const hist = state.history.filter(h => inRange(h.completedDate));
+  const post = state.postponeLog.filter(p => inRange(p.when));
+
+  const total = hist.length;
+  const onFirst = hist.filter(h => h.onFirst).length;
+  const onFirstPct = total ? Math.round(onFirst / total * 100) : 0;
+  const by = p => hist.filter(h => h.person === p);
+  const postBy = p => post.filter(x => x.person === p).length;
+
+  /* weekly chart: last 8 weeks, always (independent of range filter) */
+  const weeks = [];
+  let wk = mondayOf(todayIso());
+  for (let i = 0; i < 8; i++) { weeks.unshift(wk); wk = addDays(wk, -7); }
+  const wkData = weeks.map(w => {
+    const end = addDays(w, 6);
+    const inWk = state.history.filter(h => h.completedDate >= w && h.completedDate <= end);
+    return { w, p1: inWk.filter(h => h.person === "p1").length, p2: inWk.filter(h => h.person === "p2").length };
+  });
+  const wkMax = Math.max(1, ...wkData.map(d => d.p1 + d.p2));
+  const barH = v => Math.round(v / wkMax * 88);
+
+  /* per-task table */
+  const byTask = new Map();
+  for (const h of hist) {
+    const k = h.title;
+    if (!byTask.has(k)) byTask.set(k, { icon: h.icon, p1: 0, p2: 0, onFirst: 0, post: 0 });
+    const row = byTask.get(k);
+    row[h.person]++;
+    if (h.onFirst) row.onFirst++;
+  }
+  for (const p of post) {
+    if (!byTask.has(p.title)) byTask.set(p.title, { icon: "", p1: 0, p2: 0, onFirst: 0, post: 0 });
+    byTask.get(p.title).post++;
+  }
+  const taskRows = [...byTask.entries()].sort((a, b) => (b[1].p1 + b[1].p2) - (a[1].p1 + a[1].p2));
+
+  const c1 = by("p1").length, c2 = by("p2").length;
+  const share1 = c1 + c2 ? c1 / (c1 + c2) * 100 : 50;
+
+  let html = `
+    <div class="filter-row"><div class="seg">
+      ${[["all", "All time"], ["90", "90 days"], ["30", "30 days"], ["7", "7 days"]].map(([v, l]) =>
+        `<button class="${statsRange === v ? "active" : ""}" onclick="setRange('${v}')">${l}</button>`).join("")}
+    </div></div>
+
+    <div class="kpis">
+      <div class="tile"><div class="val">${total}</div><div class="lab">Tasks completed</div></div>
+      <div class="tile"><div class="val">${onFirstPct}%</div><div class="lab">Done on first planned date (${onFirst})</div></div>
+      <div class="tile"><div class="val">${post.length}</div><div class="lab">Postpones</div></div>
+    </div>`;
+
+  if (!total && !post.length) {
+    html += `<div class="empty"><span class="big">📊</span>No stats yet.<br>Complete your first chore and the numbers will appear here.</div>`;
+    el.innerHTML = html;
+    return;
+  }
+
+  html += `
+    <div class="panel">
+      <h3>Who's pulling their weight <span class="sub">· completed tasks</span></h3>
+      <div class="balance" role="img" aria-label="${esc(pname("p1"))} ${c1}, ${esc(pname("p2"))} ${c2}">
+        ${c1 ? `<div class="b1" style="width:${share1}%"></div>` : ""}
+        ${c2 ? `<div class="b2" style="width:${100 - share1}%"></div>` : ""}
+      </div>
+      <div class="balance-labels">
+        <span><span class="dot p1"></span> ${esc(pname("p1"))} · ${c1}</span>
+        <span>${esc(pname("p2"))} · ${c2} <span class="dot p2"></span></span>
+      </div>
+    </div>
+
+    <div class="pcards">
+      ${["p1", "p2"].map(p => {
+        const done = by(p);
+        const of = done.filter(h => h.onFirst).length;
+        return `
+        <div class="pcard">
+          <div class="name"><span class="dot ${p}"></span>${esc(pname(p))}</div>
+          <div class="stat"><span>Completed</span><b>${done.length}</b></div>
+          <div class="stat"><span>On first date</span><b>${done.length ? Math.round(of / done.length * 100) + "%" : "—"}</b></div>
+          <div class="stat"><span>Postpones</span><b>${postBy(p)}</b></div>
+        </div>`;
+      }).join("")}
+    </div>
+
+    <div class="panel">
+      <h3>Activity <span class="sub">· last 8 weeks</span></h3>
+      <div class="weeks">
+        ${wkData.map((d, i) => `
+          <div class="week-col" onclick="weekTip(this, ${i})" data-w="${d.w}" data-p1="${d.p1}" data-p2="${d.p2}">
+            <div class="total">${d.p1 + d.p2 || ""}</div>
+            ${d.p2 ? `<div class="seg2" style="height:${Math.max(4, barH(d.p2))}px"></div>` : ""}
+            ${d.p1 ? `<div class="seg1" style="height:${Math.max(4, barH(d.p1))}px"></div>` : ""}
+          </div>`).join("")}
+      </div>
+      <div class="week-labels">${wkData.map(d => `<span>${fromIso(d.w).getDate()}/${fromIso(d.w).getMonth() + 1}</span>`).join("")}</div>
+      <div class="legend">
+        <span><span class="dot p1"></span>${esc(pname("p1"))}</span>
+        <span><span class="dot p2"></span>${esc(pname("p2"))}</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>By task</h3>
+      <div style="overflow-x:auto">
+        <table class="stats">
+          <thead><tr>
+            <th>Task</th>
+            <th><span class="th-dot"><span class="dot p1"></span>${esc(pname("p1"))}</span></th>
+            <th><span class="th-dot"><span class="dot p2"></span>${esc(pname("p2"))}</span></th>
+            <th>Moved</th>
+            <th>On time</th>
+          </tr></thead>
+          <tbody>
+            ${taskRows.map(([title, r]) => `
+              <tr>
+                <td>${r.icon ? r.icon + " " : ""}${esc(title)}</td>
+                <td>${r.p1 || "·"}</td>
+                <td>${r.p2 || "·"}</td>
+                <td>${r.post || "·"}</td>
+                <td>${r.onFirst || "·"}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  el.innerHTML = html;
+}
+
+function weekTip(col, i) {
+  const open = col.querySelector(".tip");
+  document.querySelectorAll(".tip").forEach(t => t.remove());
+  if (open) return; // second tap closes
+  const w = fromIso(col.dataset.w);
+  const wkLabel = "Wk of " + w.getDate() + " " + w.toLocaleDateString(undefined, { month: "short" });
+  const tip = document.createElement("div");
+  tip.className = "tip";
+  tip.textContent = `${wkLabel} · ${pname("p1")} ${col.dataset.p1} · ${pname("p2")} ${col.dataset.p2}`;
+  col.appendChild(tip);
+  setTimeout(() => tip.remove(), 3000);
+}
+
+/* ================= settings ================= */
+function renderSettings() {
+  const el = document.getElementById("view-settings");
+  el.innerHTML = `
+    <div class="settings-group">
+      <h3>Household</h3>
+      <div class="settings-card">
+        <div class="field">
+          <label><span class="dot p1"></span> Person 1</label>
+          <input type="text" id="s-p1" value="${esc(pname("p1"))}" onchange="renamePerson('p1', this.value)">
+        </div>
+        <div class="field">
+          <label><span class="dot p2"></span> Person 2</label>
+          <input type="text" id="s-p2" value="${esc(pname("p2"))}" onchange="renamePerson('p2', this.value)">
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h3>Sync between your phones</h3>
+      <div class="settings-card">
+        <p style="margin-bottom:12px">Data lives on this phone. To get you both on the same page: <b>Export</b> here, send the code via iMessage/WhatsApp, and your partner taps <b>Import</b> on their phone. The most recently exported phone wins.</p>
+        <div class="row2">
+          <button class="btn" onclick="exportData()">📤 Export</button>
+          <button class="btn" onclick="openImport()">📥 Import</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h3>Extras</h3>
+      <div class="settings-card">
+        <button class="btn block" onclick="seedStarters(); save(); toast('Starter chores added'); switchTab('schedule')" style="margin-bottom:10px">🧺 Add starter chores</button>
+        <p>💡 <b>Tip:</b> open this page in Safari and use <b>Share → Add to Home Screen</b> to install Sparkle as an app on your iPhone.</p>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h3>Danger zone</h3>
+      <div class="settings-card">
+        <button class="btn danger block" onclick="eraseAll()">Erase all data</button>
+      </div>
+    </div>
+    <p style="text-align:center;color:var(--muted);font-size:12px;margin-top:8px">Sparkle · made for two 🧽✨</p>`;
+}
+function renamePerson(p, v) {
+  v = v.trim();
+  if (!v) { renderSettings(); return; }
+  state.people[p].name = v;
+  save();
+  toast("Name updated");
+}
+async function exportData() {
+  const payload = JSON.stringify(state);
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: "Sparkle data", text: "SPARKLE:" + btoa(unescape(encodeURIComponent(payload))) });
+      return;
+    }
+  } catch (e) { if (e.name === "AbortError") return; }
+  try {
+    await navigator.clipboard.writeText("SPARKLE:" + btoa(unescape(encodeURIComponent(payload))));
+    toast("Copied — paste it to your partner");
+  } catch (e) {
+    openSheet(`<h2>Export</h2><div class="field"><textarea class="code" readonly onclick="this.select()">SPARKLE:${btoa(unescape(encodeURIComponent(payload)))}</textarea><div class="hint">Copy this code and send it to your partner.</div></div>`);
+  }
+}
+function openImport() {
+  openSheet(`
+    <h2>Import data</h2>
+    <div class="field">
+      <label for="imp">Paste the code from your partner</label>
+      <textarea class="code" id="imp" placeholder="SPARKLE:…"></textarea>
+      <div class="hint">⚠️ This replaces everything on this phone with the imported data.</div>
+    </div>
+    <button class="btn primary block" onclick="doImport()">Import</button>`);
+}
+function doImport() {
+  let raw = document.getElementById("imp").value.trim();
+  try {
+    if (raw.startsWith("SPARKLE:")) raw = decodeURIComponent(escape(atob(raw.slice(8))));
+    const data = JSON.parse(raw);
+    if (!data.people || !Array.isArray(data.tasks) || !Array.isArray(data.history)) throw new Error("bad shape");
+    data.postponeLog = data.postponeLog || [];
+    state = data;
+    save(); closeSheet();
+    document.getElementById("setup").style.display = "none";
+    document.getElementById("app").style.display = "block";
+    switchTab("schedule");
+    toast("Data imported ✅");
+  } catch (e) {
+    toast("That code doesn't look right");
+  }
+}
+function eraseAll() {
+  if (!confirm("Erase ALL tasks, history and stats on this phone? This cannot be undone.")) return;
+  localStorage.removeItem(KEY);
+  location.reload();
+}
+
+/* ================= go ================= */
+boot();
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
