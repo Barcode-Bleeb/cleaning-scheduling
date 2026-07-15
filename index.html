@@ -336,6 +336,7 @@ textarea.code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; he
     <label class="toggle"><input id="setup-seed" type="checkbox" checked><span class="knob"></span></label>
   </div>
   <button class="btn primary block" style="margin-top:12px" onclick="finishSetup()">Let's go ✨</button>
+  <button class="btn block" style="margin-top:10px" onclick="openSyncSetup()">🔗 I have a pairing code</button>
 </div>
 
 <!-- ============ app shell ============ -->
@@ -396,11 +397,22 @@ let editingId = null;   // task being edited in the form
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) return migrate(JSON.parse(raw));
   } catch (e) { /* corrupted -> start fresh */ }
-  return { version: 1, people: { p1: { name: "" }, p2: { name: "" } }, tasks: [], history: [], postponeLog: [] };
+  return migrate({ version: 2, people: { p1: { name: "" }, p2: { name: "" } }, tasks: [], history: [], postponeLog: [] });
 }
-function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
+function migrate(s) {
+  s.version = 2;
+  s.tombs = s.tombs || { tasks: {}, history: {} };
+  s.peopleMod = s.peopleMod || 0;
+  s.tasks.forEach(t => { if (!t.mod) t.mod = Date.now(); });
+  s.history.forEach(h => { if (!h.ts) h.ts = Date.now(); });
+  return s;
+}
+function save() {
+  localStorage.setItem(KEY, JSON.stringify(state));
+  schedulePush();
+}
 function uid() { return (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(36).slice(2)); }
 
 /* ================= dates ================= */
@@ -483,6 +495,7 @@ function finishSetup() {
   if (!n1 || !n2) { toast("Please fill in both names"); return; }
   state.people.p1.name = n1;
   state.people.p2.name = n2;
+  state.peopleMod = Date.now();
   if (document.getElementById("setup-seed").checked) seedStarters();
   save();
   document.getElementById("setup").style.display = "none";
@@ -498,7 +511,7 @@ function seedStarters() {
       id: uid(), title: s.title, icon: s.icon,
       person: i % 2 === 0 ? "p1" : "p2",
       date, firstDate: date, postpones: 0,
-      repeat: s.repeat, alternate: s.alternate, notes: "",
+      repeat: s.repeat, alternate: s.alternate, notes: "", mod: Date.now(),
     });
   });
 }
@@ -590,6 +603,7 @@ function openTaskActions(id) {
       <button class="btn primary" onclick="openComplete('${t.id}')">✅&nbsp; Mark as done</button>
       <button class="btn" onclick="openPostpone('${t.id}')">📆&nbsp; Postpone</button>
       <button class="btn" onclick="openTaskForm('${t.id}')">✏️&nbsp; Edit</button>
+      <button class="btn" onclick="addToCalendar('${t.id}')">📅&nbsp; Add to iPhone calendar</button>
       <button class="btn danger" onclick="deleteTask('${t.id}')">🗑️&nbsp; Delete</button>
     </div>`);
 }
@@ -599,6 +613,7 @@ function deleteTask(id) {
   if (!t) return;
   if (!confirm(`Delete “${t.title}”? This removes the planned task (history is kept).`)) return;
   state.tasks = state.tasks.filter(x => x.id !== id);
+  state.tombs.tasks[id] = Date.now();
   save(); closeSheet(); render();
   toast("Task deleted");
 }
@@ -637,15 +652,16 @@ function confirmComplete() {
     firstDate: t.firstDate, plannedDate: t.date, completedDate,
     postpones: t.postpones,
     onFirst: t.postpones === 0 && completedDate <= t.firstDate,
-    restore: { ...t }, spawnedId: null,
+    restore: { ...t }, spawnedId: null, ts: Date.now(),
   };
   state.tasks = state.tasks.filter(x => x.id !== t.id);
+  state.tombs.tasks[t.id] = Date.now();
   if (t.repeat) {
     let next = applyRepeat(t.date, t.repeat);
     while (next <= todayIso()) next = applyRepeat(next, t.repeat);
     const nt = {
       ...t, id: uid(), date: next, firstDate: next, postpones: 0,
-      person: t.alternate ? other(person) : t.person,
+      person: t.alternate ? other(person) : t.person, mod: Date.now(),
     };
     entry.spawnedId = nt.id;
     state.tasks.push(nt);
@@ -659,8 +675,15 @@ function undoComplete(hid) {
   if (i < 0) return;
   const h = state.history[i];
   state.history.splice(i, 1);
-  if (h.spawnedId) state.tasks = state.tasks.filter(t => t.id !== h.spawnedId);
-  if (h.restore && !state.tasks.some(t => t.id === h.restore.id)) state.tasks.push(h.restore);
+  state.tombs.history[h.id] = Date.now();
+  if (h.spawnedId) {
+    state.tasks = state.tasks.filter(t => t.id !== h.spawnedId);
+    state.tombs.tasks[h.spawnedId] = Date.now();
+  }
+  if (h.restore && !state.tasks.some(t => t.id === h.restore.id)) {
+    delete state.tombs.tasks[h.restore.id]; // resurrect
+    state.tasks.push({ ...h.restore, mod: Date.now() });
+  }
   save(); render();
   toast("Undone");
 }
@@ -692,6 +715,7 @@ function doPostpone(id, newDate) {
   state.postponeLog.push({ when: todayIso(), title: t.title, person: t.person, from: t.date, to: newDate });
   t.postpones++;
   t.date = newDate;
+  t.mod = Date.now();
   save(); closeSheet(); render();
   toast(`Moved to ${humanDate(newDate)}`);
 }
@@ -768,14 +792,14 @@ function saveTaskForm() {
   if (editingId) {
     const t = state.tasks.find(x => x.id === editingId);
     if (t) {
-      Object.assign(t, { title, icon: formSel.icon, person: formSel.person, repeat, alternate, notes });
+      Object.assign(t, { title, icon: formSel.icon, person: formSel.person, repeat, alternate, notes, mod: Date.now() });
       if (t.date !== date) { t.date = date; t.firstDate = date; t.postpones = 0; } // edited date = new plan
     }
     toast("Task updated");
   } else {
     state.tasks.push({
       id: uid(), title, icon: formSel.icon, person: formSel.person,
-      date, firstDate: date, postpones: 0, repeat, alternate, notes,
+      date, firstDate: date, postpones: 0, repeat, alternate, notes, mod: Date.now(),
     });
     toast("Task planned 📌");
   }
@@ -953,9 +977,32 @@ function renderSettings() {
     </div>
 
     <div class="settings-group">
-      <h3>Sync between your phones</h3>
+      <h3>Real-time sync</h3>
+      <div class="settings-card" id="sync-status">
+        ${sync.cfg ? `
+          <p style="margin-bottom:12px">
+            <span class="dot" style="background:${sync.status === "on" ? "var(--good)" : sync.status === "error" ? "var(--danger)" : "var(--muted)"}"></span>
+            <b>${sync.status === "on" ? "Connected" : sync.status === "error" ? "Can't reach household — will retry" : "Connecting…"}</b>
+            · household ${esc(sync.cfg.h.slice(0, 8))}
+          </p>
+          <div class="row2" style="margin-bottom:10px">
+            <button class="btn" onclick="sharePairCode()">🔗 Pairing code</button>
+            <button class="btn" onclick="pullNow(); toast('Refreshed')">🔄 Refresh</button>
+          </div>
+          <button class="btn block" onclick="copyFeedUrl()" style="margin-bottom:10px">📅 Copy calendar feed link</button>
+          <p style="margin-bottom:10px">Subscribe to the feed on both iPhones (Settings → Apps → Calendar → Calendar Accounts → Add Subscribed Calendar) and every planned task shows up in your calendar automatically. Requires the calendar function from SYNC-SETUP.md.</p>
+          <button class="btn danger block" onclick="disconnectSync()">Disconnect sync</button>
+        ` : `
+          <p style="margin-bottom:12px">Both phones share one live schedule: changes appear on the other phone within seconds. One-time setup with a free Supabase account — the walkthrough is in <b>SYNC-SETUP.md</b> in the project.</p>
+          <button class="btn primary block" onclick="openSyncSetup()">⚡ Set up real-time sync</button>
+        `}
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h3>Manual backup</h3>
       <div class="settings-card">
-        <p style="margin-bottom:12px">Data lives on this phone. To get you both on the same page: <b>Export</b> here, send the code via iMessage/WhatsApp, and your partner taps <b>Import</b> on their phone. The most recently exported phone wins.</p>
+        <p style="margin-bottom:12px">Export copies everything as a code you can send or keep; Import replaces this phone's data with it.</p>
         <div class="row2">
           <button class="btn" onclick="exportData()">📤 Export</button>
           <button class="btn" onclick="openImport()">📥 Import</button>
@@ -983,6 +1030,7 @@ function renamePerson(p, v) {
   v = v.trim();
   if (!v) { renderSettings(); return; }
   state.people[p].name = v;
+  state.peopleMod = Date.now();
   save();
   toast("Name updated");
 }
@@ -1018,7 +1066,7 @@ function doImport() {
     const data = JSON.parse(raw);
     if (!data.people || !Array.isArray(data.tasks) || !Array.isArray(data.history)) throw new Error("bad shape");
     data.postponeLog = data.postponeLog || [];
-    state = data;
+    state = migrate(data);
     save(); closeSheet();
     document.getElementById("setup").style.display = "none";
     document.getElementById("app").style.display = "block";
@@ -1034,8 +1082,309 @@ function eraseAll() {
   location.reload();
 }
 
+/* ================= real-time sync (Supabase) ================= */
+/*
+ * Design: one row per household in table `sparkle_state` — { household, doc, rev }.
+ * Every local change saves locally first (offline-first), then pushes the whole
+ * doc with optimistic concurrency (update ... where rev = lastSeenRev). On
+ * conflict or on a realtime event from the other phone, docs are merged
+ * entity-wise: newest-wins per task (mod), union for history/postpones (append-
+ * only), tombstones so deletions/completions replicate instead of resurrecting.
+ */
+const SYNC_KEY = "sparkle.sync.v1";
+const sync = { cfg: null, client: null, rev: 0, status: "off", pushTimer: null, pushing: false, dirty: false };
+try { sync.cfg = JSON.parse(localStorage.getItem(SYNC_KEY)); } catch (e) {}
+
+function mergeDocs(a, b) {
+  const now = Date.now();
+  const tombTasks = { ...a.tombs.tasks, ...b.tombs.tasks };
+  const tombHist = { ...a.tombs.history, ...b.tombs.history };
+  for (const k of Object.keys(a.tombs.tasks)) if (b.tombs.tasks[k]) tombTasks[k] = Math.max(a.tombs.tasks[k], b.tombs.tasks[k]);
+  for (const k of Object.keys(a.tombs.history)) if (b.tombs.history[k]) tombHist[k] = Math.max(a.tombs.history[k], b.tombs.history[k]);
+
+  const tasks = new Map();
+  for (const t of [...a.tasks, ...b.tasks]) {
+    const cur = tasks.get(t.id);
+    if (!cur || (t.mod || 0) > (cur.mod || 0)) tasks.set(t.id, t);
+  }
+  // a tombstone wins unless the entity was written *after* it (resurrection via undo)
+  const liveTasks = [...tasks.values()].filter(t => !(tombTasks[t.id] && (t.mod || 0) <= tombTasks[t.id]));
+  for (const t of liveTasks) if (tombTasks[t.id]) delete tombTasks[t.id];
+
+  const hist = new Map();
+  for (const h of [...a.history, ...b.history]) if (!hist.has(h.id)) hist.set(h.id, h);
+  const liveHist = [...hist.values()]
+    .filter(h => !(tombHist[h.id] && (h.ts || 0) <= tombHist[h.id]))
+    .sort((x, y) => (x.ts || 0) - (y.ts || 0));
+
+  const seen = new Set();
+  const post = [];
+  for (const p of [...a.postponeLog, ...b.postponeLog]) {
+    const k = [p.when, p.title, p.from, p.to, p.person].join("|");
+    if (!seen.has(k)) { seen.add(k); post.push(p); }
+  }
+
+  // prune tombstones older than 60 days
+  for (const o of [tombTasks, tombHist]) for (const k of Object.keys(o)) if (now - o[k] > 60 * 864e5) delete o[k];
+
+  const newerPeople = (b.peopleMod || 0) > (a.peopleMod || 0) ? b : a;
+  return {
+    version: 2,
+    people: newerPeople.people, peopleMod: newerPeople.peopleMod || 0,
+    tasks: liveTasks, history: liveHist, postponeLog: post,
+    tombs: { tasks: tombTasks, history: tombHist },
+  };
+}
+function stableStr(v) {
+  // canonical JSON: object keys sorted, so jsonb round-trips compare equal
+  if (Array.isArray(v)) return "[" + v.map(stableStr).join(",") + "]";
+  if (v && typeof v === "object") return "{" + Object.keys(v).sort().map(k => JSON.stringify(k) + ":" + stableStr(v[k])).join(",") + "}";
+  return JSON.stringify(v);
+}
+function docEquals(a, b) {
+  const pick = s => stableStr({
+    p: s.people, pm: s.peopleMod || 0,
+    t: [...s.tasks].sort((x, y) => x.id.localeCompare(y.id)),
+    h: [...s.history].sort((x, y) => x.id.localeCompare(y.id)),
+    l: [...s.postponeLog].map(stableStr).sort(),
+    d: s.tombs,
+  });
+  return pick(a) === pick(b);
+}
+
+function setSyncStatus(s) {
+  sync.status = s;
+  const el = document.getElementById("sync-status");
+  if (el) renderSettings();
+}
+function loadSupabaseLib() {
+  if (window.supabase) return Promise.resolve();
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";
+    s.onload = res; s.onerror = () => rej(new Error("could not load sync library"));
+    document.head.appendChild(s);
+  });
+}
+async function initSync() {
+  if (!sync.cfg) return;
+  try {
+    await loadSupabaseLib();
+    sync.client = window.supabase.createClient(sync.cfg.u, sync.cfg.k);
+    sync.client
+      .channel("sparkle-" + sync.cfg.h)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "sparkle_state", filter: "household=eq." + sync.cfg.h },
+        payload => { if (payload.new) applyRemote(payload.new); })
+      .subscribe(st => setSyncStatus(st === "SUBSCRIBED" ? "on" : sync.status));
+    window.addEventListener("online", pullNow);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) pullNow(); });
+    await pullNow();
+  } catch (e) {
+    setSyncStatus("error");
+  }
+}
+async function pullNow() {
+  if (!sync.client) return;
+  try {
+    const { data, error } = await sync.client.from("sparkle_state").select("doc, rev").eq("household", sync.cfg.h).maybeSingle();
+    if (error) throw error;
+    if (data) applyRemote(data);
+    setSyncStatus("on");
+  } catch (e) { setSyncStatus("error"); }
+}
+function stateDoc() {
+  const { version, people, peopleMod, tasks, history, postponeLog, tombs } = state;
+  return { version, people, peopleMod: peopleMod || 0, tasks, history, postponeLog, tombs };
+}
+function applyRemote(row) {
+  if (row.rev < sync.rev) return;
+  sync.rev = row.rev;
+  const merged = mergeDocs(stateDoc(), migrate(row.doc));
+  const localChanged = !docEquals(merged, stateDoc());
+  const remoteBehind = !docEquals(merged, migrate(row.doc));
+  if (localChanged) {
+    Object.assign(state, merged);
+    localStorage.setItem(KEY, JSON.stringify(state));
+    render();
+  }
+  if (remoteBehind) schedulePush(); // we have things the other phone doesn't
+}
+function schedulePush() {
+  if (!sync.cfg) return;
+  sync.dirty = true;
+  clearTimeout(sync.pushTimer);
+  sync.pushTimer = setTimeout(pushNow, 800);
+}
+async function pushNow() {
+  if (!sync.client || sync.pushing) return;
+  sync.pushing = true;
+  sync.dirty = false;
+  try {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const doc = stateDoc();
+      const { data, error } = await sync.client.from("sparkle_state")
+        .update({ doc, rev: sync.rev + 1, updated_at: new Date().toISOString() })
+        .eq("household", sync.cfg.h).eq("rev", sync.rev).select("rev");
+      if (error) throw error;
+      if (data && data.length) { sync.rev = data[0].rev; setSyncStatus("on"); break; }
+      // conflict: someone pushed in between -> pull, merge, retry
+      const { data: cur, error: e2 } = await sync.client.from("sparkle_state").select("doc, rev").eq("household", sync.cfg.h).maybeSingle();
+      if (e2) throw e2;
+      if (!cur) { // row vanished; recreate
+        await sync.client.from("sparkle_state").insert({ household: sync.cfg.h, doc, rev: 1 });
+        sync.rev = 1; break;
+      }
+      applyRemote(cur);
+    }
+  } catch (e) {
+    setSyncStatus("error"); // will retry on next change / focus / online event
+    sync.dirty = true;
+  } finally {
+    sync.pushing = false;
+    if (sync.dirty) schedulePush();
+  }
+}
+
+/* ---- sync setup UI flows ---- */
+function pairCode() {
+  return "SPARKLEPAIR:" + btoa(unescape(encodeURIComponent(JSON.stringify(sync.cfg))));
+}
+function openSyncSetup() {
+  openSheet(`
+    <h2>Set up real-time sync</h2>
+    <p style="font-size:13.5px;color:var(--ink-2);margin:-6px 0 14px;line-height:1.5">
+      One of you does this once (see <b>SYNC-SETUP.md</b> in the project for the 10-minute walkthrough).
+      The other just pastes the pairing code.</p>
+    <div class="field">
+      <label for="sy-url">Supabase project URL</label>
+      <input type="url" id="sy-url" placeholder="https://xxxx.supabase.co" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="sy-key">Anon public key</label>
+      <input type="text" id="sy-key" placeholder="eyJhbGciOi…" autocomplete="off">
+    </div>
+    <button class="btn primary block" onclick="createHousehold()">Create household 🏠</button>
+    <div style="text-align:center;margin:12px 0;color:var(--muted);font-size:13px">— or —</div>
+    <div class="field">
+      <label for="sy-pair">Pairing code from your partner</label>
+      <textarea class="code" id="sy-pair" placeholder="SPARKLEPAIR:…"></textarea>
+    </div>
+    <button class="btn block" onclick="joinHousehold()">Pair this phone 🔗</button>`);
+}
+async function createHousehold() {
+  const u = document.getElementById("sy-url").value.trim().replace(/\/+$/, "");
+  const k = document.getElementById("sy-key").value.trim();
+  if (!/^https:\/\/.+/.test(u) || !k) { toast("Fill in the URL and the anon key"); return; }
+  sync.cfg = { u, k, h: uid() };
+  try {
+    await loadSupabaseLib();
+    sync.client = window.supabase.createClient(u, k);
+    const { error } = await sync.client.from("sparkle_state").insert({ household: sync.cfg.h, doc: stateDoc(), rev: 1 });
+    if (error) throw error;
+    sync.rev = 1;
+    localStorage.setItem(SYNC_KEY, JSON.stringify(sync.cfg));
+    closeSheet();
+    await initSync();
+    renderSettings();
+    toast("Household created — now pair the other phone");
+    sharePairCode();
+  } catch (e) {
+    sync.cfg = null; sync.client = null;
+    toast("Couldn't connect: " + (e.message || "check URL/key and the SQL setup"));
+  }
+}
+async function joinHousehold() {
+  let raw = document.getElementById("sy-pair").value.trim();
+  try {
+    if (!raw.startsWith("SPARKLEPAIR:")) throw new Error("bad prefix");
+    const cfg = JSON.parse(decodeURIComponent(escape(atob(raw.slice(12)))));
+    if (!cfg.u || !cfg.k || !cfg.h) throw new Error("bad fields");
+    sync.cfg = cfg;
+  } catch (e) { toast("That pairing code doesn't look right"); return; }
+  try {
+    localStorage.setItem(SYNC_KEY, JSON.stringify(sync.cfg));
+    closeSheet();
+    await initSync();          // pulls + merges the household data with local
+    schedulePush();            // and shares anything local the household lacks
+    document.getElementById("setup").style.display = "none";
+    document.getElementById("app").style.display = "block";
+    renderSettings();
+    toast("Paired — you're in sync 🎉");
+  } catch (e) {
+    toast("Couldn't connect to the household");
+  }
+}
+async function sharePairCode() {
+  const code = pairCode();
+  try {
+    if (navigator.share) { await navigator.share({ title: "Sparkle pairing code", text: code }); return; }
+  } catch (e) { if (e.name === "AbortError") return; }
+  try { await navigator.clipboard.writeText(code); toast("Pairing code copied"); }
+  catch (e) {
+    openSheet(`<h2>Pairing code</h2><div class="field"><textarea class="code" readonly onclick="this.select()">${code}</textarea><div class="hint">Send this to your partner; they paste it under Settings → Sync → Pair.</div></div>`);
+  }
+}
+function disconnectSync() {
+  if (!confirm("Disconnect this phone from real-time sync? Your data stays on the phone.")) return;
+  localStorage.removeItem(SYNC_KEY);
+  sync.cfg = null; sync.client = null; sync.rev = 0; sync.status = "off";
+  renderSettings();
+  toast("Sync disconnected");
+}
+
+/* ================= calendar (.ics) ================= */
+function icsEscape(s) { return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n"); }
+function icsDate(isoStr) { return isoStr.replace(/-/g, ""); }
+function taskToIcs(t) {
+  const rruleMap = { d: "DAILY", w: "WEEKLY", m: "MONTHLY" };
+  let rrule = "";
+  if (t.repeat) {
+    const n = parseInt(t.repeat, 10), unit = t.repeat.slice(-1);
+    rrule = `RRULE:FREQ=${rruleMap[unit]};INTERVAL=${n}\r\n`;
+  }
+  const summary = `${t.icon} ${t.title} (${pname(t.person)})`;
+  const desc = (t.notes ? t.notes + "\\n" : "") + "Planned in Sparkle";
+  return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Sparkle//EN\r\n" +
+    "BEGIN:VEVENT\r\n" +
+    `UID:${t.id}@sparkle\r\n` +
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z\r\n` +
+    `DTSTART;VALUE=DATE:${icsDate(t.date)}\r\n` +
+    `DTEND;VALUE=DATE:${icsDate(addDays(t.date, 1))}\r\n` +
+    rrule +
+    `SUMMARY:${icsEscape(summary)}\r\n` +
+    `DESCRIPTION:${icsEscape(desc)}\r\n` +
+    "END:VEVENT\r\nEND:VCALENDAR\r\n";
+}
+async function addToCalendar(id) {
+  const t = state.tasks.find(x => x.id === id);
+  if (!t) return;
+  const file = new File([taskToIcs(t)], "sparkle-" + t.title.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".ics", { type: "text/calendar" });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: t.title });
+      return;
+    }
+  } catch (e) { if (e.name === "AbortError") return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(file);
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function calendarFeedUrl() {
+  if (!sync.cfg) return null;
+  return sync.cfg.u + "/functions/v1/calendar?h=" + sync.cfg.h;
+}
+async function copyFeedUrl() {
+  const url = calendarFeedUrl();
+  try { await navigator.clipboard.writeText(url); toast("Calendar link copied"); }
+  catch (e) { openSheet(`<h2>Calendar feed</h2><div class="field"><textarea class="code" readonly onclick="this.select()">${url}</textarea></div>`); }
+}
+
 /* ================= go ================= */
 boot();
+initSync();
 if ("serviceWorker" in navigator && location.protocol === "https:") {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }

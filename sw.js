@@ -1,5 +1,5 @@
 /* Sparkle service worker — offline support */
-const CACHE = "sparkle-v1";
+const CACHE = "sparkle-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -24,7 +24,19 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
-  if (url.origin !== location.origin) return;
+  if (url.origin !== location.origin) {
+    // cache the sync library so the app still boots fully offline
+    if (url.hostname === "cdn.jsdelivr.net") {
+      e.respondWith(
+        caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy));
+          return res;
+        }))
+      );
+    }
+    return;
+  }
 
   // network-first for the page itself, so updates arrive; cache-first for the rest
   if (e.request.mode === "navigate" || url.pathname.endsWith("index.html")) {
