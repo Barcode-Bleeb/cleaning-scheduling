@@ -1,5 +1,5 @@
 /* Sparkle service worker — offline support */
-const CACHE = "sparkle-v2";
+const CACHE = "sparkle-v3";
 const ASSETS = [
   "./",
   "./index.html",
@@ -18,6 +18,27 @@ self.addEventListener("activate", (e) => {
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("push", (e) => {
+  let data = { title: "Sparkle", body: "" };
+  try { data = e.data.json(); } catch (err) { if (e.data) data.body = e.data.text(); }
+  e.waitUntil(self.registration.showNotification(data.title || "Sparkle", {
+    body: data.body || "",
+    tag: data.tag || "sparkle",
+    icon: "icons/icon-192.png",
+    badge: "icons/icon-192.png",
+  }));
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      for (const w of wins) if ("focus" in w) return w.focus();
+      return self.clients.openWindow("./");
+    })
   );
 });
 

@@ -13,6 +13,7 @@ A tiny, installable web app for planning the household cleaning between you and 
 - **Undo** — accidentally marked something done? Undo it from "Recently done".
 - **Real-time sync** *(optional)* — both phones share one live schedule via a free Supabase backend. One-time setup: see [SYNC-SETUP.md](SYNC-SETUP.md).
 - **iPhone Calendar integration** — add any task to your calendar from its action sheet, or (with sync enabled) subscribe to an auto-updating calendar feed of all planned tasks.
+- **Push notifications** *(optional, with sync)* — a morning summary of today's tasks and a ping when your partner completes something; per-phone opt-in and toggles. See [SYNC-SETUP.md](SYNC-SETUP.md) Part 4.
 - **Works offline** and in light & dark mode.
 
 ## Getting it on your iPhones (one-time setup)

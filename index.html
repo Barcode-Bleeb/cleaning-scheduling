@@ -668,6 +668,7 @@ function confirmComplete() {
   }
   state.history.push(entry);
   save(); closeSheet(); render();
+  notifyPartnerCompleted(entry);
   toast(entry.onFirst ? "Done — right on schedule ✨" : "Done ✅");
 }
 function undoComplete(hid) {
@@ -998,6 +999,34 @@ function renderSettings() {
         `}
       </div>
     </div>
+
+    ${sync.cfg ? `
+    <div class="settings-group">
+      <h3>Notifications</h3>
+      <div class="settings-card">
+        ${notif ? `
+          <p style="margin-bottom:10px">🔔 <b>On</b> — this is ${esc(pname(notif.person))}'s phone.</p>
+          <div class="field switch-row">
+            <div><div class="lab">Morning summary</div><div class="sub">Today's tasks, every morning</div></div>
+            <label class="toggle"><input type="checkbox" ${notif.remind ? "checked" : ""} onchange="setNotifPref('remind', this.checked)"><span class="knob"></span></label>
+          </div>
+          <div class="field switch-row">
+            <div><div class="lab">Partner completions</div><div class="sub">Ping when the other one finishes a task</div></div>
+            <label class="toggle"><input type="checkbox" ${notif.completions ? "checked" : ""} onchange="setNotifPref('completions', this.checked)"><span class="knob"></span></label>
+          </div>
+          <button class="btn danger block" onclick="disableNotifications()">Turn off on this phone</button>
+        ` : `
+          <p style="margin-bottom:12px">Get a morning summary of today's tasks and a ping when your partner completes something. Each phone opts in for itself. Requires the push function from SYNC-SETUP.md Part 4${needsInstall() ? " and the app installed via Share → Add to Home Screen" : ""}.</p>
+          <div class="field">
+            <label>Whose phone is this?</label>
+            <div class="row2">
+              <button class="btn" onclick="enableNotifications('p1')"><span class="dot p1"></span>&nbsp;${esc(pname("p1"))}</button>
+              <button class="btn" onclick="enableNotifications('p2')"><span class="dot p2"></span>&nbsp;${esc(pname("p2"))}</button>
+            </div>
+          </div>
+        `}
+      </div>
+    </div>` : ""}
 
     <div class="settings-group">
       <h3>Manual backup</h3>
@@ -1380,6 +1409,87 @@ async function copyFeedUrl() {
   const url = calendarFeedUrl();
   try { await navigator.clipboard.writeText(url); toast("Calendar link copied"); }
   catch (e) { openSheet(`<h2>Calendar feed</h2><div class="field"><textarea class="code" readonly onclick="this.select()">${url}</textarea></div>`); }
+}
+
+/* ================= push notifications ================= */
+const NOTIF_KEY = "sparkle.notif.v1";
+let notif = null;
+try { notif = JSON.parse(localStorage.getItem(NOTIF_KEY)); } catch (e) {}
+
+function pushFnUrl() { return sync.cfg ? sync.cfg.u + "/functions/v1/push" : null; }
+function pushSupported() {
+  return "Notification" in window && "serviceWorker" in navigator && "PushManager" in window;
+}
+function needsInstall() {
+  // iOS only exposes web push to apps installed on the Home Screen
+  const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const standalone = window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+  return iOS && !standalone;
+}
+function b64ToU8(s) {
+  s = (s + "=".repeat((4 - s.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+}
+async function enableNotifications(person) {
+  if (!pushSupported()) { toast(needsInstall() ? "First install Sparkle: Share → Add to Home Screen" : "This browser doesn't support notifications"); return; }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { toast("Notifications are blocked for Sparkle"); return; }
+    const reg = await navigator.serviceWorker.ready;
+    const { publicKey } = await (await fetch(pushFnUrl())).json();
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(publicKey) });
+    notif = { person, remind: true, completions: true, endpoint: sub.endpoint };
+    const res = await fetch(pushFnUrl(), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "subscribe", h: sync.cfg.h, sub: sub.toJSON(), person, remind: true, completions: true }),
+    });
+    if (!res.ok) throw new Error("subscribe failed");
+    localStorage.setItem(NOTIF_KEY, JSON.stringify(notif));
+    renderSettings();
+    toast("Notifications on 🔔");
+  } catch (e) {
+    toast("Couldn't enable notifications: " + (e.message || e));
+  }
+}
+async function setNotifPref(field, on) {
+  if (!notif) return;
+  notif[field] = on;
+  localStorage.setItem(NOTIF_KEY, JSON.stringify(notif));
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    await fetch(pushFnUrl(), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "subscribe", h: sync.cfg.h, sub: sub.toJSON(), person: notif.person, remind: notif.remind, completions: notif.completions }),
+    });
+  } catch (e) { toast("Saved on this phone; will sync when online"); }
+}
+async function disableNotifications() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) { await sub.unsubscribe(); }
+    if (notif?.endpoint && pushFnUrl()) {
+      await fetch(pushFnUrl(), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "unsubscribe", endpoint: notif.endpoint }),
+      });
+    }
+  } catch (e) {}
+  notif = null;
+  localStorage.removeItem(NOTIF_KEY);
+  renderSettings();
+  toast("Notifications off");
+}
+function notifyPartnerCompleted(entry) {
+  if (!sync.cfg || !pushFnUrl()) return;
+  fetch(pushFnUrl(), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "completed", h: sync.cfg.h, endpoint: notif?.endpoint || null,
+      title: `${entry.icon} ${entry.title}`, byName: pname(entry.person),
+    }),
+  }).catch(() => {});
 }
 
 /* ================= go ================= */

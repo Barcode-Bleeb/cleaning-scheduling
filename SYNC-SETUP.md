@@ -50,9 +50,64 @@ This publishes your planned tasks as a subscribable calendar feed that updates a
 
 Planned tasks now show up as all-day events named like "🧹 Vacuum living room (Lisa)". iOS refreshes subscribed calendars periodically, so completed tasks disappear and new plans appear on their own.
 
+## Part 4 (optional) — push notifications
+
+A morning summary of today's tasks, and a ping when your partner completes something. Works on iPhone for web apps **installed on the Home Screen** (iOS 16.4+).
+
+1. In the **SQL Editor**, run:
+
+```sql
+create table if not exists sparkle_push_keys (
+  id          int primary key default 1 check (id = 1),
+  public_key  text not null,
+  private_jwk jsonb not null,
+  last_remind timestamptz
+);
+alter table sparkle_push_keys enable row level security;
+
+create table if not exists sparkle_push_subs (
+  endpoint    text primary key,
+  household   text not null,
+  person      text not null default 'p1',
+  sub         jsonb not null,
+  remind      boolean not null default true,
+  completions boolean not null default true,
+  created_at  timestamptz not null default now()
+);
+alter table sparkle_push_subs enable row level security;
+```
+
+(No policies on purpose — these tables are only reachable by the function below, not by the app directly.)
+
+2. In **Edge Functions**, deploy a new function via the editor, named exactly `push`. It needs **two files** (use "Add file" in the editor):
+   - `index.ts` — contents of [`supabase/functions/push/index.ts`](supabase/functions/push/index.ts)
+   - `webpush.js` — contents of [`supabase/functions/push/webpush.js`](supabase/functions/push/webpush.js)
+
+   Deploy, then in the function's settings turn **off** "Enforce JWT verification" (same as the calendar function).
+
+3. Schedule the morning reminder. In the **SQL Editor**, run this **after replacing `YOUR-PROJECT-REF`** with the part of your project URL before `.supabase.co`:
+
+```sql
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+select cron.schedule(
+  'sparkle-morning-reminder',
+  '0 6 * * *',   -- 06:00 UTC = 08:00 Dutch summer time / 07:00 winter time
+  $$ select net.http_post(
+       url     := 'https://YOUR-PROJECT-REF.supabase.co/functions/v1/push',
+       headers := '{"Content-Type":"application/json"}'::jsonb,
+       body    := '{"action":"remind"}'::jsonb) $$);
+```
+
+4. On each iPhone, in Sparkle: **Settings → Notifications** → tap your own name → allow notifications. Each phone opts in for itself and can toggle "Morning summary" and "Partner completions" separately.
+
+> The morning reminder is sent at most once per 6 hours no matter how often the schedule fires, and notes which tasks are yours vs. your partner's. If a phone revokes permission, its subscription is cleaned up automatically on the next send.
+
 ## Troubleshooting
 
 - **"Couldn't connect" when creating the household** — re-check the URL/key, and make sure the SQL from step 3 ran without errors.
 - **Changes don't appear in real time but do after reopening the app** — make sure the SQL's last line ran (`alter publication supabase_realtime add table sparkle_state`); it enables live updates.
 - **Calendar feed shows nothing** — confirm JWT verification is off for the function and that the link ends with `?h=<your household id>`.
+- **Notifications don't arrive on iPhone** — they only work for the app installed via Share → Add to Home Screen (not in a Safari tab), on iOS 16.4 or newer, and the phone must have allowed notifications when asked. Re-enable under Settings → Notifications in Sparkle after reinstalling the app.
 - **Supabase pauses free projects after ~1 week of inactivity** — normal use (opening the app) counts as activity; if it ever pauses, one click in the dashboard resumes it and no data is lost.
