@@ -85,7 +85,7 @@ alter table sparkle_push_subs enable row level security;
 
    Deploy, then in the function's settings turn **off** "Enforce JWT verification" (same as the calendar function).
 
-3. Schedule the morning reminder. In the **SQL Editor**, run this **after replacing `YOUR-PROJECT-REF`** with the part of your project URL before `.supabase.co`:
+3. Schedule the morning reminder. Copy the block below, and replace `PASTE-YOUR-PROJECT-URL-HERE` with your **Project URL** — the same `https://….supabase.co` address you pasted into Sparkle when setting up sync (find it under **Project Settings → API → Project URL**). Keep the quotes and keep `/functions/v1/push` at the end, so the line reads like `url := 'https://abcdefgh.supabase.co/functions/v1/push',`. Then run it in the **SQL Editor**; it replies with a number (the schedule's ID) when it worked.
 
 ```sql
 create extension if not exists pg_cron;
@@ -95,7 +95,7 @@ select cron.schedule(
   'sparkle-morning-reminder',
   '0 6 * * *',   -- 06:00 UTC = 08:00 Dutch summer time / 07:00 winter time
   $$ select net.http_post(
-       url     := 'https://YOUR-PROJECT-REF.supabase.co/functions/v1/push',
+       url     := 'PASTE-YOUR-PROJECT-URL-HERE/functions/v1/push',
        headers := '{"Content-Type":"application/json"}'::jsonb,
        body    := '{"action":"remind"}'::jsonb) $$);
 ```
