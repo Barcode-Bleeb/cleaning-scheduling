@@ -1436,7 +1436,12 @@ async function enableNotifications(person) {
     const perm = await Notification.requestPermission();
     if (perm !== "granted") { toast("Notifications are blocked for Sparkle"); return; }
     const reg = await navigator.serviceWorker.ready;
-    const { publicKey } = await (await fetch(pushFnUrl())).json();
+    let keyRes;
+    try { keyRes = await fetch(pushFnUrl()); }
+    catch (err) { throw new Error("can't reach the push function — is it deployed? (SYNC-SETUP.md Part 4, step 2)"); }
+    if (!keyRes.ok) throw new Error(`the push function answered HTTP ${keyRes.status}` + (keyRes.status === 401 ? " — turn OFF 'Enforce JWT verification' in the function's settings" : " — check it's deployed as 'push' with both files (Part 4, step 2)"));
+    const { publicKey } = await keyRes.json().catch(() => ({}));
+    if (!publicKey) throw new Error("the push function gave no key — redeploy it with both files (Part 4, step 2)");
     const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(publicKey) });
     notif = { person, remind: true, completions: true, endpoint: sub.endpoint };
     const res = await fetch(pushFnUrl(), {
