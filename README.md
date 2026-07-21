@@ -34,15 +34,29 @@ Two options:
 - **Real-time (recommended):** follow [SYNC-SETUP.md](SYNC-SETUP.md) once (~10 minutes, free). Changes then appear on the other phone within seconds, and the app keeps working offline.
 - **Manual:** **Settings → Export** on one phone, send the code, **Settings → Import** on the other. The imported data fully replaces what's on the receiving phone.
 
+## Documentation
+
+Longer-form guides live in [`docs/`](docs/). All three are PDFs (open on GitHub, or download).
+
+| Document | For whom | What it covers |
+|---|---|---|
+| [📘 Course Manual](docs/Sparkle-Course-Manual.pdf) *(32 pages)* | Anyone wanting to **understand** the app | A beginner-friendly walkthrough: the system at a glance, how the app was built step by step, how to read the code, the data & state model, PWA/offline, Git & GitHub hosting, a deep dive on the Supabase backend, real-time sync internals, notifications & calendar, testing, and a rubric for reading code like a reviewer. |
+| [📄 Quick Reference](docs/Sparkle-Quick-Reference.pdf) *(2 pages)* | Quick lookups | A cheat-sheet companion to the manual: mental models, the file map, the *data → render* loop, review flags, and a mini-glossary. |
+| [🚀 Setup Guide](docs/Sparkle-Setup-Guide.pdf) *(4 pages)* | A **new household** getting started | Step-by-step to run Sparkle on your two phones — *Basic* (no accounts, ~2 min) or *Full* (own free Supabase project for sync, notifications & calendar, ~15 min), with a checklist and troubleshooting. |
+
+For the exact backend setup steps (SQL, Edge Functions, scheduling), see [SYNC-SETUP.md](SYNC-SETUP.md).
+
 ## Development
 
 Plain HTML/CSS/JS — no build step, no dependencies.
 
 | File | Purpose |
 |---|---|
-| `index.html` | The entire app (UI + logic) |
+| `index.html` | The entire app (UI + logic + styling in one file) |
 | `manifest.webmanifest` | PWA manifest (name, icons, standalone display) |
-| `sw.js` | Service worker for offline use |
+| `sw.js` | Service worker for offline use and auto-updates |
 | `icons/` | App icons |
+| `supabase/functions/` | Edge Functions: the calendar feed and push-notification sender |
+| `docs/` | Course manual, quick reference, and setup guide (PDFs) |
 
 To run locally: `python3 -m http.server` and open `http://localhost:8000`.
