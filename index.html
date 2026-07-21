@@ -9,48 +9,55 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Sparkle">
-<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#FBFBFA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141310" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <style>
 :root {
   color-scheme: light;
-  --page:           #f9f9f7;
-  --surface:        #fcfcfb;
-  --ink:            #0b0b0b;
-  --ink-2:          #52514e;
-  --muted:          #898781;
-  --hairline:       #e1e0d9;
-  --border:         rgba(11,11,11,0.10);
-  --p1:             #2a78d6;   /* person 1 — blue  */
-  --p2:             #008300;   /* person 2 — green */
-  --accent:         #2a78d6;
-  --accent-ink:     #ffffff;
-  --good:           #006300;
-  --danger:         #d03b3b;
-  --danger-soft:    rgba(208,59,59,0.10);
-  --wash:           rgba(11,11,11,0.045);
-  --sheet-shadow:   0 -8px 40px rgba(0,0,0,0.18);
+  --page:           #FBFBFA;
+  --surface:        #FBFBFA;
+  --ink:            #131211;
+  --ink-2:          #55534E;
+  --muted:          #9A968C;
+  --hairline:       #E7E5DF;
+  --border:         transparent;
+  --p1:             #D6A320;   /* person 1 — summer yellow (marks) */
+  --p2:             #8A6FC7;   /* person 2 — summer purple (marks) */
+  --p1-wash:        #FAEFC0;   /* summer yellow — pale (avatars) */
+  --p2-wash:        #E8E0F5;   /* summer purple — pale (avatars) */
+  --icon-ink:       #55534E;   /* line-icon stroke inside avatars */
+  --accent:         #47453F;   /* graphite grey — primary fills */
+  --accent-ink:     #FBFBFA;
+  --good:           #3F6B33;
+  --danger:         #B4472F;
+  --danger-soft:    rgba(180,71,47,0.08);
+  --wash:           rgba(19,18,17,0.045);
+  --sheet-shadow:   0 -8px 40px rgba(0,0,0,0.14);
 }
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --page:         #0d0d0d;
-    --surface:      #1a1a19;
-    --ink:          #ffffff;
-    --ink-2:        #c3c2b7;
-    --muted:        #898781;
-    --hairline:     #2c2c2a;
-    --border:       rgba(255,255,255,0.10);
-    --p1:           #3987e5;
-    --p2:           #008300;
-    --accent:       #3987e5;
-    --good:         #0ca30c;
-    --danger:       #e66767;
-    --danger-soft:  rgba(230,103,103,0.14);
-    --wash:         rgba(255,255,255,0.06);
+    --page:         #141310;
+    --surface:      #141310;
+    --ink:          #F5F3EC;
+    --ink-2:        #B8B4A8;
+    --muted:        #7C776C;
+    --hairline:     #2A2824;
+    --border:       transparent;
+    --p1:           #E0AE36;
+    --p2:           #A98FE0;
+    --p1-wash:      #37301C;
+    --p2-wash:      #2C2640;
+    --icon-ink:     #B8B4A8;
+    --accent:       #E9E5D9;
+    --accent-ink:   #141310;
+    --good:         #7FB86A;
+    --danger:       #E7795E;
+    --danger-soft:  rgba(231,121,94,0.16);
+    --wash:         rgba(245,243,236,0.06);
     --sheet-shadow: 0 -8px 40px rgba(0,0,0,0.5);
   }
 }
@@ -309,6 +316,81 @@ textarea.code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; he
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .hidden { display: none !important; }
+
+/* ===== summer-mono theme (v4) ===== */
+body { font-family: -apple-system, "SF Pro Text", system-ui, "Segoe UI", sans-serif; }
+
+/* flat surfaces, hairline dividers instead of cards */
+.card, .panel, .tile, .pcard, .settings-card { background: transparent; border: none; border-radius: 0; }
+.panel, .settings-card { padding: 18px 2px; border-top: 1px solid var(--hairline); margin-top: 4px; }
+.settings-card { padding: 16px 2px; }
+.task-row { padding: 13px 2px; border-bottom: 1px solid var(--hairline); }
+.card .task-row:last-child { border-bottom: 1px solid var(--hairline); }
+.card { border-radius: 0; }
+header.topbar { border-bottom: 1px solid var(--hairline); }
+header.topbar h1 { font-size: 20px; font-weight: 450; letter-spacing: -0.01em; }
+
+.section-label { font-size: 10.5px; letter-spacing: 0.14em; font-weight: 600; margin: 26px 4px 2px; }
+.section-label:first-child { margin-top: 4px; }
+.task-title { font-size: 16px; font-weight: 550; letter-spacing: -0.01em; }
+.task-sub { color: var(--muted); }
+
+/* line-icon avatars, pale person wash behind */
+.task-icon { background: var(--wash); border: none; color: var(--icon-ink); }
+.task-icon.p1 { background: var(--p1-wash); }
+.task-icon.p2 { background: var(--p2-wash); }
+.ico { width: 21px; height: 21px; display: block; }
+.ico-sm { width: 12px; height: 12px; display: inline-block; vertical-align: -1px; }
+.ico-inline { width: 20px; height: 20px; display: inline-block; vertical-align: -3px; }
+.task-date { font-weight: 500; color: var(--ink-2); }
+
+/* KPI row: inverted hero tile + big thin numerals */
+.kpis { gap: 8px; }
+.tile { padding: 16px 14px; border: 1px solid var(--hairline); border-radius: 14px; }
+.kpis .tile:first-child { background: var(--accent); border-color: var(--accent); }
+.kpis .tile:first-child .val, .kpis .tile:first-child .lab { color: var(--page); }
+.kpis .tile:first-child .lab { opacity: 0.72; }
+.tile .val { font-size: 33px; font-weight: 250; letter-spacing: -0.02em; }
+.tile .lab { font-size: 10px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); margin-top: 6px; }
+
+.panel h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 600; color: var(--muted); }
+.panel h3 .sub { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.pcards { gap: 0; }
+.pcard { padding: 16px 2px; border-top: 1px solid var(--hairline); border-radius: 0; }
+.pcard:first-child { padding-right: 18px; }
+.pcard + .pcard { border-left: 1px solid var(--hairline); padding-left: 18px; }
+.pcard .name { font-size: 14px; font-weight: 600; }
+.pcard .stat b { font-weight: 600; }
+
+.week-col .seg1, .week-col .seg2 { max-width: 10px; border-radius: 3px 3px 0 0; }
+.week-col .seg2 + .seg1 { border-radius: 0; }
+.week-col .total { font-weight: 500; }
+.balance { height: 9px; border-radius: 5px; }
+
+/* controls */
+.btn { border-radius: 999px; font-weight: 550; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); }
+.btn.block, .action-list .btn { border-radius: 14px; }
+.add-btn { background: var(--accent); color: var(--accent-ink); font-weight: 300; }
+.seg { background: transparent; border: 1px solid var(--hairline); border-radius: 999px; padding: 3px; }
+.seg button { border-radius: 999px; font-size: 13px; }
+.seg button.active { background: var(--accent); color: var(--page); box-shadow: none; }
+.toggle input:checked + .knob { background: var(--accent); }
+.chips button { background: transparent; border: 1px solid var(--hairline); }
+.chips button.active { border-color: var(--ink); background: transparent; }
+.icon-grid button { background: var(--wash); color: var(--icon-ink); border: 1.5px solid transparent; }
+.icon-grid button.active { border-color: var(--ink); background: transparent; }
+.icon-grid .ico { width: 24px; height: 24px; }
+input, select, textarea { background: transparent; border-radius: 12px; }
+.badge { background: transparent; border: 1px solid var(--hairline); font-weight: 600; }
+.badge.snooze { border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); background: transparent; }
+
+nav.tabs button { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; gap: 5px; padding-top: 10px; }
+nav.tabs button.active { color: var(--ink); }
+table.stats th { letter-spacing: 0.09em; }
+.sheet { border-radius: 20px 20px 0 0; }
+.sheet h2 { font-weight: 500; font-size: 17px; }
+#setup .hero .mark .ico { width: 46px; height: 46px; margin: 0 auto; stroke-width: 1.3; }
 </style>
 </head>
 <body>
@@ -316,7 +398,7 @@ textarea.code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; he
 <!-- ============ first-run setup ============ -->
 <div id="setup">
   <div class="hero">
-    <span class="mark">🧽</span>
+    <span class="mark"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l1.5 5.2 5.2 1.5-5.2 1.5L12 16.9l-1.5-5.2L5.3 10.2l5.2-1.5Z"/><path d="M18 4l.6 1.9 1.9.6-1.9.6L18 9l-.6-1.9L15.5 6.5l1.9-.6Z"/></svg></span>
     <h1>Sparkle</h1>
     <p>A tiny cleaning planner for the two of you.<br>Plan chores, take turns, keep score.</p>
   </div>
@@ -353,9 +435,9 @@ textarea.code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; he
   </main>
 
   <nav class="tabs">
-    <button data-tab="schedule" class="active" onclick="switchTab('schedule')"><span class="glyph">🗓️</span>Schedule</button>
-    <button data-tab="stats" onclick="switchTab('stats')"><span class="glyph">📊</span>Stats</button>
-    <button data-tab="settings" onclick="switchTab('settings')"><span class="glyph">⚙️</span>Settings</button>
+    <button data-tab="schedule" class="active" onclick="switchTab('schedule')"><svg class="glyph" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></svg>Schedule</button>
+    <button data-tab="stats" onclick="switchTab('stats')"><svg class="glyph" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-8M21 20H3"/></svg>Stats</button>
+    <button data-tab="settings" onclick="switchTab('settings')"><svg class="glyph" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16M4 16h16"/><circle cx="9" cy="8" r="2.1"/><circle cx="15" cy="16" r="2.1"/></svg>Settings</button>
   </nav>
 </div>
 
@@ -367,7 +449,32 @@ textarea.code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; he
 "use strict";
 /* ================= state ================= */
 const KEY = "sparkle.v1";
-const ICONS = ["🧹","🧽","🧺","🍽️","🚽","🛁","🛏️","🪟","🌿","🗑️","🐕","👕","🧊","🚗","🪣","✨"];
+const ICONS = ["🧹","🧽","🍽️","🪣","🚽","🛁","🛏️","🪟","🌿","🧺","👕","🗑️","🧊","🐕","🚗","✨"];
+// custom thin line icons, keyed by the emoji stored on each task (data stays
+// emoji so calendar feeds and notifications still read as text everywhere).
+const ICON_PATHS = {
+  "🧹": '<path d="M15.5 4.5 9.8 12"/><path d="M7.6 11 13 14.6"/><path d="M7.6 11 6 17.6M9.8 12.4 8.8 18.2M11.8 13.6 11.3 18.9M13 14.6 13.6 19"/><path d="M6 17.6Q10 19.8 13.6 19"/>',
+  "🧽": '<path d="M4.5 8.5a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v7h-15z"/><path d="M4.5 15.5h15"/><circle cx="8.6" cy="9.6" r="1"/><circle cx="12.4" cy="8.8" r="1.4"/>',
+  "🍽️": '<path d="M4 12h16c0 3.9-3.6 7-8 7s-8-3.1-8-7Z"/><path d="M3.3 12h17.4"/><path d="M10 8c0-1 1-1 1-2s-1-1-1-2M14 8c0-1 1-1 1-2s-1-1-1-2"/>',
+  "🪣": '<path d="M5 8h14l-1.5 11h-11z"/><path d="M4.4 8h15.2"/><path d="M6.6 8a5.4 5.4 0 0 1 10.8 0"/>',
+  "🚽": '<path d="M7 5h8v3H7z"/><path d="M6.4 8.5h9.2c-.4 3.4-2.3 4.8-4.6 4.8S6.8 11.9 6.4 8.5Z"/><path d="M10.6 13.3 9.8 20h4l-.8-6.7"/>',
+  "🛁": '<path d="M4 12h16v1.2c0 2.8-1.9 4.8-4.8 4.8H8.8C5.9 18 4 16 4 13.2Z"/><path d="M17 12V9c0-1 .7-1.6 1.6-1.6"/><path d="M7 18.2V20M17 18.2V20"/>',
+  "🛏️": '<path d="M3 18v-7M3 13h18v5M21 18v-4"/><path d="M5.5 13v-2.3c0-.9.6-1.4 1.4-1.4h10.2c.8 0 1.4.5 1.4 1.4V13"/>',
+  "🪟": '<rect x="5" y="4" width="14" height="16" rx="1.4"/><path d="M12 4v16M5 12h14"/>',
+  "🌿": '<path d="M8.5 13 9.4 20h5.2l.9-7Z"/><path d="M8.5 13h7"/><path d="M12 13V7.5"/><path d="M12 10.2C9.2 10.2 8 8.4 8.4 6.6 10.6 6.6 12 8.2 12 10.2Z"/><path d="M12 9.4c2.6 0 3.7-1.6 3.3-3.3-2 0-3.3 1.5-3.3 3.3Z"/>',
+  "🧺": '<path d="M6 9h12l-1 10H7Z"/><path d="M4.8 9h14.4"/><path d="M8 9c0-2 1.8-3.5 4-3.5S16 7 16 9"/><path d="M9 9.4 8.5 19M12 9.4V19M15 9.4 15.5 19M6.7 14h10.6"/>',
+  "👕": '<path d="M9 5 6 8l1.6 1.6L9 8.2V19h6V8.2l1.4 1.4L18 8l-3-3-1.4 1c-.9.6-2.2.6-3.1 0L9 5Z"/>',
+  "🗑️": '<path d="M5 7h14"/><path d="M10 4h4v3"/><path d="M6.6 7 7.6 20h8.8l1-13"/><path d="M10 10.5v6M14 10.5v6"/>',
+  "🧊": '<path d="M6 3.6h12a1.6 1.6 0 0 1 1.6 1.6v13.6a1.6 1.6 0 0 1-1.6 1.6H6a1.6 1.6 0 0 1-1.6-1.6V5.2A1.6 1.6 0 0 1 6 3.6Z"/><path d="M4.4 10h15.2"/><path d="M7.4 6v2M7.4 12.4v3"/>',
+  "🐕": '<circle cx="8" cy="11" r="1.3"/><circle cx="10.6" cy="8.7" r="1.3"/><circle cx="13.4" cy="8.7" r="1.3"/><circle cx="16" cy="11" r="1.3"/><path d="M12 13c-2 0-3.5 1.3-3.5 2.8 0 1.3 1.5 1.8 3.5 1.8s3.5-.5 3.5-1.8C15.5 14.3 14 13 12 13Z"/>',
+  "🚗": '<path d="M3.5 14h17"/><path d="M5 14l1.4-4.2c.3-.8.9-1.3 1.8-1.3h7.6c.9 0 1.5.5 1.8 1.3L19 14v3.5h-2.5V16h-9v1.5H5Z"/><circle cx="8" cy="17.5" r="1.6"/><circle cx="16" cy="17.5" r="1.6"/>',
+  "✨": '<path d="M12 3.5l1.5 5.2 5.2 1.5-5.2 1.5L12 16.9l-1.5-5.2L5.3 10.2l5.2-1.5Z"/><path d="M18 4l.6 1.9 1.9.6-1.9.6L18 9l-.6-1.9L15.5 6.5l1.9-.6Z"/>',
+};
+function iconSvg(icon, cls) {
+  const p = ICON_PATHS[icon] || ICON_PATHS["✨"];
+  return `<svg class="ico ${cls || ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+}
+const REPEAT_GLYPH = `<svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9a8 8 0 0 1 13.5-3.5L20 8M20 15a8 8 0 0 1-13.5 3.5L4 16"/><path d="M20 4v4h-4M4 20v-4h4"/></svg>`;
 const REPEATS = [
   { id: "",     label: "Never" },
   { id: "1d",   label: "Every day" },
@@ -561,7 +668,7 @@ function renderSchedule() {
     html += `<div class="section-label">Recently done</div><div class="card">`;
     html += recent.map(h => `
       <div class="task-row done-row">
-        <div class="task-icon ${h.person}">${h.icon || "✨"}</div>
+        <div class="task-icon ${h.person}">${iconSvg(h.icon || "✨")}</div>
         <div class="task-main">
           <div class="task-title">${esc(h.title)}</div>
           <div class="task-sub"><span class="dot ${h.person}"></span>${esc(pname(h.person))} · ${humanDate(h.completedDate)}${h.onFirst ? " · on time ✓" : ""}</div>
@@ -577,12 +684,12 @@ function taskRow(t) {
   const overdue = t.date < todayIso();
   return `
     <button class="task-row" onclick="openTaskActions('${t.id}')">
-      <div class="task-icon ${t.person}">${t.icon}</div>
+      <div class="task-icon ${t.person}">${iconSvg(t.icon)}</div>
       <div class="task-main">
         <div class="task-title">${esc(t.title)}</div>
         <div class="task-sub">
           <span class="dot ${t.person}"></span>${esc(pname(t.person))}
-          ${t.repeat ? `· 🔁 ${repeatLabel(t.repeat).toLowerCase()}` : ""}
+          ${t.repeat ? `· ${REPEAT_GLYPH} ${repeatLabel(t.repeat).toLowerCase()}` : ""}
           ${t.postpones ? `<span class="badge snooze">moved ×${t.postpones}</span>` : ""}
         </div>
       </div>
@@ -595,7 +702,7 @@ function openTaskActions(id) {
   const t = state.tasks.find(x => x.id === id);
   if (!t) return;
   openSheet(`
-    <h2>${t.icon} ${esc(t.title)}</h2>
+    <h2>${iconSvg(t.icon, "ico-inline")} ${esc(t.title)}</h2>
     <p style="font-size:13.5px;color:var(--ink-2);margin:-6px 0 14px">
       ${esc(pname(t.person))} · ${humanDate(t.date)}${t.repeat ? " · " + repeatLabel(t.repeat).toLowerCase() : ""}${t.postpones ? ` · postponed ${t.postpones}×` : ""}
     </p>
@@ -736,7 +843,7 @@ function openTaskForm(id) {
     <div class="field">
       <label>Icon</label>
       <div class="icon-grid" id="f-icons">
-        ${ICONS.map(ic => `<button class="${ic === formSel.icon ? "active" : ""}" onclick="pickIcon(this,'${ic}')">${ic}</button>`).join("")}
+        ${ICONS.map(ic => `<button class="${ic === formSel.icon ? "active" : ""}" onclick="pickIcon(this,'${ic}')" aria-label="icon">${iconSvg(ic)}</button>`).join("")}
       </div>
     </div>
     <div class="row2">
@@ -932,7 +1039,7 @@ function renderStats() {
           <tbody>
             ${taskRows.map(([title, r]) => `
               <tr>
-                <td>${r.icon ? r.icon + " " : ""}${esc(title)}</td>
+                <td><span style="display:inline-flex;align-items:center;gap:6px">${iconSvg(r.icon || "✨", "ico-inline")}${esc(title)}</span></td>
                 <td>${r.p1 || "·"}</td>
                 <td>${r.p2 || "·"}</td>
                 <td>${r.post || "·"}</td>

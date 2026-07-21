@@ -1,5 +1,5 @@
 /* Sparkle service worker — offline support */
-const CACHE = "sparkle-v3";
+const CACHE = "sparkle-v4";
 const ASSETS = [
   "./",
   "./index.html",
