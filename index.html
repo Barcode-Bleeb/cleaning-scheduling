@@ -1608,7 +1608,19 @@ function notifyPartnerCompleted(entry) {
 boot();
 initSync();
 if ("serviceWorker" in navigator && location.protocol === "https:") {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  // Auto-apply updates: when a fresh service worker takes over (only after a
+  // previous one was already controlling this page), reload once so the new
+  // version shows without the user having to force-quit the app.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloading || !hadController) return;
+    reloading = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register("sw.js")
+    .then((reg) => { reg.update(); })   // check for a new version on every launch
+    .catch(() => {});
 }
 </script>
 </body>
