@@ -199,8 +199,9 @@ nav.tabs button.active { color: var(--accent); }
 .field { margin-bottom: 14px; }
 .field label { display: block; font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 5px; }
 .field .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
-.row2 { display: flex; gap: 10px; }
-.row2 > * { flex: 1; }
+.row2 { display: flex; gap: 12px; }
+.row2 > * { flex: 1; min-width: 0; }
+.row2 input, .row2 select { min-width: 0; }
 .seg { display: flex; background: var(--wash); border-radius: 11px; padding: 3px; gap: 3px; }
 .seg button {
   flex: 1; padding: 8px 4px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--ink-2);
@@ -391,6 +392,16 @@ table.stats th { letter-spacing: 0.09em; }
 .sheet { border-radius: 20px 20px 0 0; }
 .sheet h2 { font-weight: 500; font-size: 17px; }
 #setup .hero .mark .ico { width: 46px; height: 46px; margin: 0 auto; stroke-width: 1.3; }
+.note-tag { font-style: italic; }
+.note-box {
+  background: var(--wash); border-radius: 12px; padding: 11px 13px;
+  font-size: 14.5px; color: var(--ink-2); line-height: 1.45; margin: 0 0 14px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.note-box-label {
+  display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 4px;
+}
 </style>
 </head>
 <body>
@@ -479,8 +490,10 @@ const REPEATS = [
   { id: "",     label: "Never" },
   { id: "1d",   label: "Every day" },
   { id: "2d",   label: "Every 2 days" },
+  { id: "3d",   label: "Every 3 days" },
   { id: "1w",   label: "Every week" },
   { id: "2w",   label: "Every 2 weeks" },
+  { id: "3w",   label: "Every 3 weeks" },
   { id: "1m",   label: "Every month" },
   { id: "2m",   label: "Every 2 months" },
   { id: "3m",   label: "Every 3 months" },
@@ -690,6 +703,7 @@ function taskRow(t) {
         <div class="task-sub">
           <span class="dot ${t.person}"></span>${esc(pname(t.person))}
           ${t.repeat ? `· ${REPEAT_GLYPH} ${repeatLabel(t.repeat).toLowerCase()}` : ""}
+          ${t.notes ? `· <span class="note-tag">notes</span>` : ""}
           ${t.postpones ? `<span class="badge snooze">moved ×${t.postpones}</span>` : ""}
         </div>
       </div>
@@ -706,6 +720,7 @@ function openTaskActions(id) {
     <p style="font-size:13.5px;color:var(--ink-2);margin:-6px 0 14px">
       ${esc(pname(t.person))} · ${humanDate(t.date)}${t.repeat ? " · " + repeatLabel(t.repeat).toLowerCase() : ""}${t.postpones ? ` · postponed ${t.postpones}×` : ""}
     </p>
+    ${t.notes ? `<div class="note-box"><span class="note-box-label">Note</span>${esc(t.notes)}</div>` : ""}
     <div class="action-list">
       <button class="btn primary" onclick="openComplete('${t.id}')">✅&nbsp; Mark as done</button>
       <button class="btn" onclick="openPostpone('${t.id}')">📆&nbsp; Postpone</button>
