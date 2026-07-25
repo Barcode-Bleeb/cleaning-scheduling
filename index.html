@@ -202,6 +202,10 @@ nav.tabs button.active { color: var(--accent); }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .row2 > * { min-width: 0; }
 .row2 input, .row2 select { width: 100%; min-width: 0; max-width: 100%; }
+/* Planned date + Repeat are stacked (never side by side) so iOS Safari's
+   native date input can't overflow a narrow column and overlap its neighbour. */
+.form-daterow .field { margin-bottom: 14px; }
+.form-daterow input, .form-daterow select { width: 100%; max-width: 100%; }
 .seg { display: flex; background: var(--wash); border-radius: 11px; padding: 3px; gap: 3px; }
 .seg button {
   flex: 1; padding: 8px 4px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--ink-2);
@@ -460,6 +464,7 @@ table.stats th { letter-spacing: 0.09em; }
 "use strict";
 /* ================= state ================= */
 const KEY = "sparkle.v1";
+const APP_VERSION = "v7";  // bump together with the service-worker cache name
 const ICONS = ["🧹","🧽","🍽️","🪣","🚽","🛁","🛏️","🪟","🌿","🧺","👕","🗑️","🧊","🐕","🚗","✨"];
 // custom thin line icons, keyed by the emoji stored on each task (data stays
 // emoji so calendar feeds and notifications still read as text everywhere).
@@ -865,7 +870,7 @@ function openTaskForm(id) {
         ${ICONS.map(ic => `<button class="${ic === formSel.icon ? "active" : ""}" onclick="pickIcon(this,'${ic}')" aria-label="icon">${iconSvg(ic)}</button>`).join("")}
       </div>
     </div>
-    <div class="row2">
+    <div class="form-daterow">
       <div class="field">
         <label for="f-date">Planned date</label>
         <input type="date" id="f-date" value="${t ? t.date : todayIso()}">
@@ -1179,7 +1184,7 @@ function renderSettings() {
         <button class="btn danger block" onclick="eraseAll()">Erase all data</button>
       </div>
     </div>
-    <p style="text-align:center;color:var(--muted);font-size:12px;margin-top:8px">Sparkle · made for two 🧽✨</p>`;
+    <p style="text-align:center;color:var(--muted);font-size:12px;margin-top:8px">Sparkle ${APP_VERSION} · made for two 🧽✨</p>`;
 }
 function renamePerson(p, v) {
   v = v.trim();
