@@ -199,9 +199,9 @@ nav.tabs button.active { color: var(--accent); }
 .field { margin-bottom: 14px; }
 .field label { display: block; font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 5px; }
 .field .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
-.row2 { display: flex; gap: 12px; }
-.row2 > * { flex: 1; min-width: 0; }
-.row2 input, .row2 select { min-width: 0; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.row2 > * { min-width: 0; }
+.row2 input, .row2 select { width: 100%; min-width: 0; max-width: 100%; }
 .seg { display: flex; background: var(--wash); border-radius: 11px; padding: 3px; gap: 3px; }
 .seg button {
   flex: 1; padding: 8px 4px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--ink-2);
@@ -779,8 +779,12 @@ function confirmComplete() {
   state.tasks = state.tasks.filter(x => x.id !== t.id);
   state.tombs.tasks[t.id] = Date.now();
   if (t.repeat) {
-    let next = applyRepeat(t.date, t.repeat);
-    while (next <= todayIso()) next = applyRepeat(next, t.repeat);
+    // Base the next occurrence on when it was ACTUALLY done, not the old
+    // planned date. So logging a daily task "for yesterday" still leaves
+    // today's occurrence to do. Only skip forward if it lands in the past
+    // (< today, not <= today — landing exactly on today is intended).
+    let next = applyRepeat(completedDate, t.repeat);
+    while (next < todayIso()) next = applyRepeat(next, t.repeat);
     const nt = {
       ...t, id: uid(), date: next, firstDate: next, postpones: 0,
       person: t.alternate ? other(person) : t.person, mod: Date.now(),
