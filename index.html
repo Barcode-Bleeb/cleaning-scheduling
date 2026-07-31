@@ -464,7 +464,7 @@ table.stats th { letter-spacing: 0.09em; }
 "use strict";
 /* ================= state ================= */
 const KEY = "sparkle.v1";
-const APP_VERSION = "v9";  // bump together with the service-worker cache name
+const APP_VERSION = "v10";  // bump together with the service-worker cache name
 const DATA_VERSION = 3;    // on-disk data shape; bump when migrate() changes
 const MAX_PEOPLE = 8;
 // Person colour palette (8 slots). Each person stores an index into this list;
@@ -635,6 +635,11 @@ function psv(pid) { return `var(--ps-${pcolour(pid)})`; }   // solid (dots, bars
 function pwv(pid) { return `var(--pw-${pcolour(pid)})`; }   // wash (avatars)
 function pdot(pid) { return `<span class="dot" style="background:${psv(pid)}"></span>`; }
 function colourInUse(idx, exceptId) { return state.order.some(id => id !== exceptId && pcolour(id) === idx); }
+/* ---- household size & mode (Solo / Duo / Group), derived from headcount ---- */
+function peopleIds() { return (state.order || []).filter(id => state.people[id]); }
+function peopleCount() { return peopleIds().length; }
+function householdMode() { const n = peopleCount(); return n <= 1 ? "solo" : n === 2 ? "duo" : "group"; }
+function applyMode() { const app = document.getElementById("app"); if (app) app.dataset.mode = householdMode(); }
 function injectPalette() {
   const vars = (key) => PALETTE.map((c, i) => `--ps-${i}:${c[key ? "ds" : "s"]};--pw-${i}:${c[key ? "dw" : "w"]};`).join("");
   const css = `:root{${vars(false)}}@media (prefers-color-scheme: dark){:root{${vars(true)}}}`;
@@ -716,6 +721,7 @@ function seedStarters() {
 
 /* ================= schedule view ================= */
 function render() {
+  applyMode();   // keep data-mode (solo/duo/group) in sync with the headcount
   if (activeTab === "schedule") renderSchedule();
   if (activeTab === "stats") renderStats();
   if (activeTab === "settings") renderSettings();
