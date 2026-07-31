@@ -464,9 +464,25 @@ table.stats th { letter-spacing: 0.09em; }
 "use strict";
 /* ================= state ================= */
 const KEY = "sparkle.v1";
-const APP_VERSION = "v8";  // bump together with the service-worker cache name
+const APP_VERSION = "v9";  // bump together with the service-worker cache name
 const DATA_VERSION = 3;    // on-disk data shape; bump when migrate() changes
 const MAX_PEOPLE = 8;
+// Person colour palette (8 slots). Each person stores an index into this list;
+// colour is a display attribute only — all data is keyed to the person id, so
+// swapping colours never moves anyone's stats. Slots 0/1 are the original
+// summer yellow/purple, so existing two-person houses look identical. Names are
+// always shown beside the colour, so colour is a secondary cue (the palette is
+// tuned for normal-vision distinctness rather than strict colour-blind safety).
+const PALETTE = [
+  { s: "#D6A320", w: "#FAEFC0", ds: "#E0AE36", dw: "#37301C" }, // 0 yellow
+  { s: "#8A6FC7", w: "#E8E0F5", ds: "#A98FE0", dw: "#2C2640" }, // 1 purple
+  { s: "#1F9C8B", w: "#D3EFEA", ds: "#35B3A1", dw: "#123230" }, // 2 teal
+  { s: "#D4573F", w: "#F8DFD8", ds: "#E4735C", dw: "#3A231D" }, // 3 coral
+  { s: "#3B7DD8", w: "#D9E6FA", ds: "#5A97E6", dw: "#152740" }, // 4 blue
+  { s: "#C85C93", w: "#F6DEEA", ds: "#DD7AA9", dw: "#361F2B" }, // 5 pink
+  { s: "#B98518", w: "#F3E4C4", ds: "#CE9B34", dw: "#33280F" }, // 6 amber
+  { s: "#5E9A3E", w: "#E1EFD4", ds: "#7BB55C", dw: "#22301A" }, // 7 green
+];
 const ICONS = ["🧹","🧽","🍽️","🪣","🚽","🛁","🛏️","🪟","🌿","🧺","👕","🗑️","🧊","🐕","🚗","✨"];
 // custom thin line icons, keyed by the emoji stored on each task (data stays
 // emoji so calendar feeds and notifications still read as text everywhere).
@@ -613,6 +629,20 @@ function mondayOf(s) { const d = fromIso(s); const off = (d.getDay() + 6) % 7; d
 function esc(t) { return String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function pname(pid) { return state.people[pid]?.name || "?"; }
 function other(pid) { return pid === "p1" ? "p2" : "p1"; }
+/* ---- person colours (data-driven) ---- */
+function pcolour(pid) { const c = state.people[pid]?.colour; return ((c == null ? 0 : c) % PALETTE.length + PALETTE.length) % PALETTE.length; }
+function psv(pid) { return `var(--ps-${pcolour(pid)})`; }   // solid (dots, bars, text marks)
+function pwv(pid) { return `var(--pw-${pcolour(pid)})`; }   // wash (avatars)
+function pdot(pid) { return `<span class="dot" style="background:${psv(pid)}"></span>`; }
+function colourInUse(idx, exceptId) { return state.order.some(id => id !== exceptId && pcolour(id) === idx); }
+function injectPalette() {
+  const vars = (key) => PALETTE.map((c, i) => `--ps-${i}:${c[key ? "ds" : "s"]};--pw-${i}:${c[key ? "dw" : "w"]};`).join("");
+  const css = `:root{${vars(false)}}@media (prefers-color-scheme: dark){:root{${vars(true)}}}`;
+  const el = document.createElement("style");
+  el.id = "palette-vars";
+  el.textContent = css;
+  document.head.appendChild(el);
+}
 function repeatLabel(id) { return (REPEATS.find(r => r.id === id) || REPEATS[0]).label; }
 let toastTimer = null;
 function toast(msg) {
@@ -648,6 +678,7 @@ function switchTab(tab) {
 
 /* ================= setup ================= */
 function boot() {
+  injectPalette();
   if (!state.people.p1.name) {
     document.getElementById("setup").style.display = "block";
   } else {
@@ -728,10 +759,10 @@ function renderSchedule() {
     html += `<div class="section-label">Recently done</div><div class="card">`;
     html += recent.map(h => `
       <div class="task-row done-row">
-        <div class="task-icon ${h.person}">${iconSvg(h.icon || "✨")}</div>
+        <div class="task-icon" style="background:${pwv(h.person)}">${iconSvg(h.icon || "✨")}</div>
         <div class="task-main">
           <div class="task-title">${esc(h.title)}</div>
-          <div class="task-sub"><span class="dot ${h.person}"></span>${esc(pname(h.person))} · ${humanDate(h.completedDate)}${h.onFirst ? " · on time ✓" : ""}</div>
+          <div class="task-sub">${pdot(h.person)}${esc(pname(h.person))} · ${humanDate(h.completedDate)}${h.onFirst ? " · on time ✓" : ""}</div>
         </div>
         <button class="btn small" onclick="undoComplete('${h.id}')">Undo</button>
       </div>`).join("");
@@ -744,11 +775,11 @@ function taskRow(t) {
   const overdue = t.date < todayIso();
   return `
     <button class="task-row" onclick="openTaskActions('${t.id}')">
-      <div class="task-icon ${t.person}">${iconSvg(t.icon)}</div>
+      <div class="task-icon" style="background:${pwv(t.person)}">${iconSvg(t.icon)}</div>
       <div class="task-main">
         <div class="task-title">${esc(t.title)}</div>
         <div class="task-sub">
-          <span class="dot ${t.person}"></span>${esc(pname(t.person))}
+          ${pdot(t.person)}${esc(pname(t.person))}
           ${t.repeat ? `· ${REPEAT_GLYPH} ${repeatLabel(t.repeat).toLowerCase()}` : ""}
           ${t.notes ? `· <span class="note-tag">notes</span>` : ""}
           ${t.postpones ? `<span class="badge snooze">moved ×${t.postpones}</span>` : ""}
@@ -797,8 +828,8 @@ function openComplete(id) {
     <h2>Nice! Who did it?</h2>
     <div class="field">
       <div class="seg" id="who-seg">
-        <button data-p="p1" class="${t.person === "p1" ? "active" : ""}" onclick="pickWho('p1')"><span class="dot p1"></span>${esc(pname("p1"))}</button>
-        <button data-p="p2" class="${t.person === "p2" ? "active" : ""}" onclick="pickWho('p2')"><span class="dot p2"></span>${esc(pname("p2"))}</button>
+        <button data-p="p1" class="${t.person === "p1" ? "active" : ""}" onclick="pickWho('p1')">${pdot("p1")}${esc(pname("p1"))}</button>
+        <button data-p="p2" class="${t.person === "p2" ? "active" : ""}" onclick="pickWho('p2')">${pdot("p2")}${esc(pname("p2"))}</button>
       </div>
     </div>
     <div class="field">
@@ -927,8 +958,8 @@ function openTaskForm(id) {
     <div class="field">
       <label>Assigned to</label>
       <div class="seg" id="f-person">
-        <button data-p="p1" class="${formSel.person === "p1" ? "active" : ""}" onclick="pickPerson('p1')"><span class="dot p1"></span>${esc(pname("p1"))}</button>
-        <button data-p="p2" class="${formSel.person === "p2" ? "active" : ""}" onclick="pickPerson('p2')"><span class="dot p2"></span>${esc(pname("p2"))}</button>
+        <button data-p="p1" class="${formSel.person === "p1" ? "active" : ""}" onclick="pickPerson('p1')">${pdot("p1")}${esc(pname("p1"))}</button>
+        <button data-p="p2" class="${formSel.person === "p2" ? "active" : ""}" onclick="pickPerson('p2')">${pdot("p2")}${esc(pname("p2"))}</button>
       </div>
     </div>
     <div class="field switch-row" id="f-alt-row" style="display:${t && t.repeat || (!t && false) ? "flex" : "none"}">
@@ -1053,12 +1084,12 @@ function renderStats() {
     <div class="panel">
       <h3>Who's pulling their weight <span class="sub">· completed tasks</span></h3>
       <div class="balance" role="img" aria-label="${esc(pname("p1"))} ${c1}, ${esc(pname("p2"))} ${c2}">
-        ${c1 ? `<div class="b1" style="width:${share1}%"></div>` : ""}
-        ${c2 ? `<div class="b2" style="width:${100 - share1}%"></div>` : ""}
+        ${c1 ? `<div class="b1" style="width:${share1}%;background:${psv("p1")}"></div>` : ""}
+        ${c2 ? `<div class="b2" style="width:${100 - share1}%;background:${psv("p2")}"></div>` : ""}
       </div>
       <div class="balance-labels">
-        <span><span class="dot p1"></span> ${esc(pname("p1"))} · ${c1}</span>
-        <span>${esc(pname("p2"))} · ${c2} <span class="dot p2"></span></span>
+        <span>${pdot("p1")} ${esc(pname("p1"))} · ${c1}</span>
+        <span>${esc(pname("p2"))} · ${c2} ${pdot("p2")}</span>
       </div>
     </div>
 
@@ -1068,7 +1099,7 @@ function renderStats() {
         const of = done.filter(h => h.onFirst).length;
         return `
         <div class="pcard">
-          <div class="name"><span class="dot ${p}"></span>${esc(pname(p))}</div>
+          <div class="name">${pdot(p)}${esc(pname(p))}</div>
           <div class="stat"><span>Completed</span><b>${done.length}</b></div>
           <div class="stat"><span>On first date</span><b>${done.length ? Math.round(of / done.length * 100) + "%" : "—"}</b></div>
           <div class="stat"><span>Postpones</span><b>${postBy(p)}</b></div>
@@ -1082,14 +1113,14 @@ function renderStats() {
         ${wkData.map((d, i) => `
           <div class="week-col" onclick="weekTip(this, ${i})" data-w="${d.w}" data-p1="${d.p1}" data-p2="${d.p2}">
             <div class="total">${d.p1 + d.p2 || ""}</div>
-            ${d.p2 ? `<div class="seg2" style="height:${Math.max(4, barH(d.p2))}px"></div>` : ""}
-            ${d.p1 ? `<div class="seg1" style="height:${Math.max(4, barH(d.p1))}px"></div>` : ""}
+            ${d.p2 ? `<div class="seg2" style="height:${Math.max(4, barH(d.p2))}px;background:${psv("p2")}"></div>` : ""}
+            ${d.p1 ? `<div class="seg1" style="height:${Math.max(4, barH(d.p1))}px;background:${psv("p1")}"></div>` : ""}
           </div>`).join("")}
       </div>
       <div class="week-labels">${wkData.map(d => `<span>${fromIso(d.w).getDate()}/${fromIso(d.w).getMonth() + 1}</span>`).join("")}</div>
       <div class="legend">
-        <span><span class="dot p1"></span>${esc(pname("p1"))}</span>
-        <span><span class="dot p2"></span>${esc(pname("p2"))}</span>
+        <span>${pdot("p1")}${esc(pname("p1"))}</span>
+        <span>${pdot("p2")}${esc(pname("p2"))}</span>
       </div>
     </div>
 
@@ -1099,8 +1130,8 @@ function renderStats() {
         <table class="stats">
           <thead><tr>
             <th>Task</th>
-            <th><span class="th-dot"><span class="dot p1"></span>${esc(pname("p1"))}</span></th>
-            <th><span class="th-dot"><span class="dot p2"></span>${esc(pname("p2"))}</span></th>
+            <th><span class="th-dot">${pdot("p1")}${esc(pname("p1"))}</span></th>
+            <th><span class="th-dot">${pdot("p2")}${esc(pname("p2"))}</span></th>
             <th>Moved</th>
             <th>On time</th>
           </tr></thead>
@@ -1142,11 +1173,11 @@ function renderSettings() {
       <h3>Household</h3>
       <div class="settings-card">
         <div class="field">
-          <label><span class="dot p1"></span> Person 1</label>
+          <label>${pdot("p1")} Person 1</label>
           <input type="text" id="s-p1" value="${esc(pname("p1"))}" onchange="renamePerson('p1', this.value)">
         </div>
         <div class="field">
-          <label><span class="dot p2"></span> Person 2</label>
+          <label>${pdot("p2")} Person 2</label>
           <input type="text" id="s-p2" value="${esc(pname("p2"))}" onchange="renamePerson('p2', this.value)">
         </div>
       </div>
@@ -1195,8 +1226,8 @@ function renderSettings() {
           <div class="field">
             <label>Whose phone is this?</label>
             <div class="row2">
-              <button class="btn" onclick="enableNotifications('p1')"><span class="dot p1"></span>&nbsp;${esc(pname("p1"))}</button>
-              <button class="btn" onclick="enableNotifications('p2')"><span class="dot p2"></span>&nbsp;${esc(pname("p2"))}</button>
+              <button class="btn" onclick="enableNotifications('p1')">${pdot("p1")}&nbsp;${esc(pname("p1"))}</button>
+              <button class="btn" onclick="enableNotifications('p2')">${pdot("p2")}&nbsp;${esc(pname("p2"))}</button>
             </div>
           </div>
         `}
