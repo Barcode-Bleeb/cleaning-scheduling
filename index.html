@@ -397,6 +397,11 @@ table.stats th { letter-spacing: 0.09em; }
 .sheet h2 { font-weight: 500; font-size: 17px; }
 #setup .hero .mark .ico { width: 46px; height: 46px; margin: 0 auto; stroke-width: 1.3; }
 .note-tag { font-style: italic; }
+/* group-mode person chips (Duo keeps the segmented control) */
+.pchips { display: flex; flex-wrap: wrap; gap: 8px; }
+.pchip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: 999px;
+  background: var(--wash); font-size: 14px; font-weight: 600; color: var(--ink-2); border: 1.5px solid transparent; }
+.pchip.active { border-color: var(--ink); color: var(--ink); }
 .note-box {
   background: var(--wash); border-radius: 12px; padding: 11px 13px;
   font-size: 14.5px; color: var(--ink-2); line-height: 1.45; margin: 0 0 14px;
@@ -464,7 +469,7 @@ table.stats th { letter-spacing: 0.09em; }
 "use strict";
 /* ================= state ================= */
 const KEY = "sparkle.v1";
-const APP_VERSION = "v10";  // bump together with the service-worker cache name
+const APP_VERSION = "v11";  // bump together with the service-worker cache name
 const DATA_VERSION = 3;    // on-disk data shape; bump when migrate() changes
 const MAX_PEOPLE = 8;
 // Person colour palette (8 slots). Each person stores an index into this list;
@@ -640,6 +645,23 @@ function peopleIds() { return (state.order || []).filter(id => state.people[id])
 function peopleCount() { return peopleIds().length; }
 function householdMode() { const n = peopleCount(); return n <= 1 ? "solo" : n === 2 ? "duo" : "group"; }
 function applyMode() { const app = document.getElementById("app"); if (app) app.dataset.mode = householdMode(); }
+// rotation for "take turns" = the next person after `pid` in the household order
+function nextInRotation(pid) {
+  const ids = peopleIds();
+  if (ids.length < 2) return pid;
+  const i = ids.indexOf(pid);
+  return ids[i < 0 ? 0 : (i + 1) % ids.length];
+}
+// a person picker that matches the household: a 2-up segmented control for Duo
+// (unchanged look), wrapping chips for Group. `exclude` drops one id (take-over).
+function assignButtons(selId, fnName, containerId, exclude) {
+  const ids = peopleIds().filter(id => id !== exclude);
+  const group = householdMode() === "group";
+  const btns = ids.map(id =>
+    `<button type="button" data-p="${id}" class="${group ? "pchip" : ""} ${id === selId ? "active" : ""}" onclick="${fnName}('${id}')">${pdot(id)}${esc(pname(id))}</button>`
+  ).join("");
+  return `<div class="${group ? "pchips" : "seg"}" id="${containerId}">${btns}</div>`;
+}
 function injectPalette() {
   const vars = (key) => PALETTE.map((c, i) => `--ps-${i}:${c[key ? "ds" : "s"]};--pw-${i}:${c[key ? "dw" : "w"]};`).join("");
   const css = `:root{${vars(false)}}@media (prefers-color-scheme: dark){:root{${vars(true)}}}`;
@@ -808,6 +830,7 @@ function openTaskActions(id) {
     <div class="action-list">
       <button class="btn primary" onclick="openComplete('${t.id}')">✅&nbsp; Mark as done</button>
       <button class="btn" onclick="openPostpone('${t.id}')">📆&nbsp; Postpone</button>
+      ${householdMode() === "solo" ? "" : `<button class="btn" onclick="openTakeover('${t.id}')">🤝&nbsp; Take over</button>`}
       <button class="btn" onclick="openTaskForm('${t.id}')">✏️&nbsp; Edit</button>
       <button class="btn" onclick="addToCalendar('${t.id}')">📅&nbsp; Add to iPhone calendar</button>
       <button class="btn danger" onclick="deleteTask('${t.id}')">🗑️&nbsp; Delete</button>
@@ -824,20 +847,52 @@ function deleteTask(id) {
   toast("Task deleted");
 }
 
+/* ---- take over (a tracked reassignment; distinct from silent Edit) ---- */
+let takeoverCtx = null;
+function openTakeover(id) {
+  const t = state.tasks.find(x => x.id === id);
+  if (!t) return;
+  const eligible = peopleIds().filter(pid => pid !== t.person);
+  if (!eligible.length) { toast("No one else to take over"); return; }
+  // default to "me" (this phone's person, if known) when eligible, else the first
+  const me = notif && notif.person;
+  const def = (me && eligible.includes(me)) ? me : eligible[0];
+  takeoverCtx = { id, to: def };
+  openSheet(`
+    <h2>Take over “${esc(t.title)}”</h2>
+    <p style="font-size:13.5px;color:var(--ink-2);margin:-6px 0 14px">Currently ${esc(pname(t.person))}'s. This is recorded in the stats (unlike editing the assignee).</p>
+    <div class="field">
+      <label>Who's taking it over?</label>
+      ${assignButtons(def, "pickTakeover", "takeover-seg", t.person)}
+    </div>
+    <button class="btn primary block" onclick="confirmTakeover()">Take over 🤝</button>`);
+}
+function pickTakeover(p) {
+  takeoverCtx.to = p;
+  document.querySelectorAll("#takeover-seg button").forEach(b => b.classList.toggle("active", b.dataset.p === p));
+}
+function confirmTakeover() {
+  const t = state.tasks.find(x => x.id === takeoverCtx.id);
+  if (!t) return;
+  const from = t.person, to = takeoverCtx.to;
+  if (!to || to === from) { closeSheet(); return; }
+  state.takeoverLog.push({ when: todayIso(), title: t.title, from, to, ts: Date.now() });
+  t.person = to;                 // owner is deliberately left unchanged (one-time cover)
+  t.mod = Date.now();
+  save(); closeSheet(); render();
+  toast(`${pname(to)} took over 🤝`);
+}
+
 /* ---- complete ---- */
 let completeCtx = null;
 function openComplete(id) {
   const t = state.tasks.find(x => x.id === id);
   if (!t) return;
-  completeCtx = { id, person: t.person };
+  const solo = householdMode() === "solo";
+  completeCtx = { id, person: solo ? peopleIds()[0] : t.person };
   openSheet(`
-    <h2>Nice! Who did it?</h2>
-    <div class="field">
-      <div class="seg" id="who-seg">
-        <button data-p="p1" class="${t.person === "p1" ? "active" : ""}" onclick="pickWho('p1')">${pdot("p1")}${esc(pname("p1"))}</button>
-        <button data-p="p2" class="${t.person === "p2" ? "active" : ""}" onclick="pickWho('p2')">${pdot("p2")}${esc(pname("p2"))}</button>
-      </div>
-    </div>
+    <h2>${solo ? "Mark as done" : "Nice! Who did it?"}</h2>
+    ${solo ? "" : `<div class="field">${assignButtons(t.person, "pickWho", "who-seg")}</div>`}
     <div class="field">
       <label for="done-date">Done on</label>
       <input type="date" id="done-date" value="${todayIso()}" max="${todayIso()}">
@@ -869,9 +924,13 @@ function confirmComplete() {
     // (< today, not <= today — landing exactly on today is intended).
     let next = applyRepeat(completedDate, t.repeat);
     while (next < todayIso()) next = applyRepeat(next, t.repeat);
+    // Take-turns tasks advance to the next person after the current ASSIGNEE
+    // (so a take-over naturally carries the rotation forward). Fixed chores
+    // return to their owner — a take-over was only a one-time cover.
+    const nextPerson = t.alternate ? nextInRotation(t.person) : (t.owner || t.person);
     const nt = {
       ...t, id: uid(), date: next, firstDate: next, postpones: 0,
-      person: t.alternate ? other(person) : t.person, mod: Date.now(),
+      person: nextPerson, owner: t.owner || t.person, mod: Date.now(),
     };
     entry.spawnedId = nt.id;
     state.tasks.push(nt);
@@ -936,7 +995,9 @@ let formSel = { icon: ICONS[0], person: "p1" };
 function openTaskForm(id) {
   editingId = id || null;
   const t = id ? state.tasks.find(x => x.id === id) : null;
-  formSel = { icon: t ? t.icon : ICONS[0], person: t ? t.person : "p1" };
+  const soloForm = householdMode() === "solo";
+  const altSub = householdMode() === "group" ? "Next time it rotates to the next person" : "Next occurrence goes to the other person";
+  formSel = { icon: t ? t.icon : ICONS[0], person: t ? t.person : (peopleIds()[0] || "p1") };
   openSheet(`
     <h2>${t ? "Edit task" : "New task"}</h2>
     <div class="field">
@@ -956,25 +1017,22 @@ function openTaskForm(id) {
       </div>
       <div class="field">
         <label for="f-repeat">Repeat</label>
-        <select id="f-repeat" onchange="document.getElementById('f-alt-row').style.display=this.value?'flex':'none'">
+        <select id="f-repeat" onchange="{const e=document.getElementById('f-alt-row'); if(e) e.style.display=this.value?'flex':'none';}">
           ${REPEATS.map(r => `<option value="${r.id}" ${t && t.repeat === r.id ? "selected" : ""}>${r.label}</option>`).join("")}
         </select>
       </div>
     </div>
-    <div class="field">
+    ${soloForm ? "" : `<div class="field">
       <label>Assigned to</label>
-      <div class="seg" id="f-person">
-        <button data-p="p1" class="${formSel.person === "p1" ? "active" : ""}" onclick="pickPerson('p1')">${pdot("p1")}${esc(pname("p1"))}</button>
-        <button data-p="p2" class="${formSel.person === "p2" ? "active" : ""}" onclick="pickPerson('p2')">${pdot("p2")}${esc(pname("p2"))}</button>
-      </div>
+      ${assignButtons(formSel.person, "pickPerson", "f-person")}
     </div>
-    <div class="field switch-row" id="f-alt-row" style="display:${t && t.repeat || (!t && false) ? "flex" : "none"}">
+    <div class="field switch-row" id="f-alt-row" style="display:${t && t.repeat ? "flex" : "none"}">
       <div>
         <div class="lab">Take turns 🔄</div>
-        <div class="sub">Next occurrence goes to the other person</div>
+        <div class="sub">${altSub}</div>
       </div>
       <label class="toggle"><input id="f-alt" type="checkbox" ${t && t.alternate ? "checked" : ""}><span class="knob"></span></label>
-    </div>
+    </div>`}
     <div class="field">
       <label for="f-notes">Notes <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
       <input type="text" id="f-notes" placeholder="e.g. don't forget behind the couch" value="${t ? esc(t.notes || "") : ""}" autocomplete="off">
@@ -996,7 +1054,8 @@ function saveTaskForm() {
   const title = document.getElementById("f-title").value.trim();
   const date = document.getElementById("f-date").value;
   const repeat = document.getElementById("f-repeat").value;
-  const alternate = document.getElementById("f-alt").checked;
+  const altEl = document.getElementById("f-alt");   // absent in Solo mode
+  const alternate = altEl ? altEl.checked : false;
   const notes = document.getElementById("f-notes").value.trim();
   if (!title) { toast("Give the task a name"); return; }
   if (!date) { toast("Pick a date"); return; }
