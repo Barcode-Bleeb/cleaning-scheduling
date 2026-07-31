@@ -464,7 +464,9 @@ table.stats th { letter-spacing: 0.09em; }
 "use strict";
 /* ================= state ================= */
 const KEY = "sparkle.v1";
-const APP_VERSION = "v7";  // bump together with the service-worker cache name
+const APP_VERSION = "v8";  // bump together with the service-worker cache name
+const DATA_VERSION = 3;    // on-disk data shape; bump when migrate() changes
+const MAX_PEOPLE = 8;
 const ICONS = ["🧹","🧽","🍽️","🪣","🚽","🛁","🛏️","🪟","🌿","🧺","👕","🗑️","🧊","🐕","🚗","✨"];
 // custom thin line icons, keyed by the emoji stored on each task (data stays
 // emoji so calendar feeds and notifications still read as text everywhere).
@@ -522,16 +524,55 @@ let editingId = null;   // task being edited in the form
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return migrate(JSON.parse(raw));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // one-time safety backup of the pre-remodel data, kept forever
+      if ((parsed.version || 0) < DATA_VERSION && !localStorage.getItem(KEY + ".backup-v2")) {
+        localStorage.setItem(KEY + ".backup-v2", raw);
+      }
+      return migrate(parsed);
+    }
   } catch (e) { /* corrupted -> start fresh */ }
   return migrate({ version: 2, people: { p1: { name: "" }, p2: { name: "" } }, tasks: [], history: [], postponeLog: [] });
 }
+function nextFreeColour(people) {
+  const used = new Set(Object.values(people).map(p => p.colour).filter(c => c != null));
+  for (let i = 0; i < MAX_PEOPLE; i++) if (!used.has(i)) return i;
+  return 0;
+}
+// migrate() is additive and non-destructive: it only fills in fields that are
+// missing, never removes or rewrites existing task/history/name data. Runs on
+// the local doc at load and on every remote doc during sync.
 function migrate(s) {
-  s.version = 2;
-  s.tombs = s.tombs || { tasks: {}, history: {} };
+  s.people = s.people || {};
+  s.tasks = s.tasks || [];
+  s.history = s.history || [];
+  s.postponeLog = s.postponeLog || [];
+  s.takeoverLog = s.takeoverLog || [];          // new in v3
   s.peopleMod = s.peopleMod || 0;
-  s.tasks.forEach(t => { if (!t.mod) t.mod = Date.now(); });
+  s.tombs = s.tombs || {};
+  s.tombs.tasks = s.tombs.tasks || {};
+  s.tombs.history = s.tombs.history || {};
+  s.tombs.people = s.tombs.people || {};         // new in v3
+  // Build the people order list, assigning it in existing-key order the first
+  // time (p1, then p2) so colours land as yellow, purple for existing houses.
+  s.order = s.order || Object.keys(s.people);
+  let ci = 0;
+  for (const id of s.order) {
+    if (s.people[id] && s.people[id].colour == null) s.people[id].colour = ci;
+    ci++;
+  }
+  // Defensive: every person is in the order list and has a colour.
+  for (const id of Object.keys(s.people)) {
+    if (!s.order.includes(id)) s.order.push(id);
+    if (s.people[id].colour == null) s.people[id].colour = nextFreeColour(s.people);
+  }
+  s.tasks.forEach(t => {
+    if (!t.mod) t.mod = Date.now();
+    if (t.owner == null) t.owner = t.person;     // owner = who the chore belongs to
+  });
   s.history.forEach(h => { if (!h.ts) h.ts = Date.now(); });
+  s.version = DATA_VERSION;
   return s;
 }
 function save() {
@@ -632,9 +673,10 @@ function seedStarters() {
   STARTERS.forEach((s, i) => {
     if (existing.has(s.title.toLowerCase())) return;
     const date = addDays(todayIso(), i % 7); // spread over the coming week
+    const person = i % 2 === 0 ? "p1" : "p2";
     state.tasks.push({
       id: uid(), title: s.title, icon: s.icon,
-      person: i % 2 === 0 ? "p1" : "p2",
+      person, owner: person,
       date, firstDate: date, postpones: 0,
       repeat: s.repeat, alternate: s.alternate, notes: "", mod: Date.now(),
     });
@@ -924,13 +966,15 @@ function saveTaskForm() {
   if (editingId) {
     const t = state.tasks.find(x => x.id === editingId);
     if (t) {
-      Object.assign(t, { title, icon: formSel.icon, person: formSel.person, repeat, alternate, notes, mod: Date.now() });
+      // Editing the assignee is an authoritative (owner) change; Take over,
+      // added later, is the tracked one-time cover that leaves owner intact.
+      Object.assign(t, { title, icon: formSel.icon, person: formSel.person, owner: formSel.person, repeat, alternate, notes, mod: Date.now() });
       if (t.date !== date) { t.date = date; t.firstDate = date; t.postpones = 0; } // edited date = new plan
     }
     toast("Task updated");
   } else {
     state.tasks.push({
-      id: uid(), title, icon: formSel.icon, person: formSel.person,
+      id: uid(), title, icon: formSel.icon, person: formSel.person, owner: formSel.person,
       date, firstDate: date, postpones: 0, repeat, alternate, notes, mod: Date.now(),
     });
     toast("Task planned 📌");
@@ -1277,22 +1321,28 @@ function mergeDocs(a, b) {
     .filter(h => !(tombHist[h.id] && (h.ts || 0) <= tombHist[h.id]))
     .sort((x, y) => (x.ts || 0) - (y.ts || 0));
 
-  const seen = new Set();
-  const post = [];
-  for (const p of [...a.postponeLog, ...b.postponeLog]) {
-    const k = [p.when, p.title, p.from, p.to, p.person].join("|");
-    if (!seen.has(k)) { seen.add(k); post.push(p); }
-  }
+  const tombPeople = { ...(a.tombs.people || {}), ...(b.tombs.people || {}) };
+  for (const k of Object.keys(a.tombs.people || {})) if ((b.tombs.people || {})[k]) tombPeople[k] = Math.max(a.tombs.people[k], b.tombs.people[k]);
+
+  // append-only logs: union, de-duplicated by content
+  const dedupe = (rows, keyOf) => {
+    const seen = new Set(); const out = [];
+    for (const r of rows) { const k = keyOf(r); if (!seen.has(k)) { seen.add(k); out.push(r); } }
+    return out;
+  };
+  const post = dedupe([...a.postponeLog, ...b.postponeLog], p => [p.when, p.title, p.from, p.to, p.person].join("|"));
+  const takeover = dedupe([...(a.takeoverLog || []), ...(b.takeoverLog || [])], t => [t.when, t.title, t.from, t.to].join("|"));
 
   // prune tombstones older than 60 days
-  for (const o of [tombTasks, tombHist]) for (const k of Object.keys(o)) if (now - o[k] > 60 * 864e5) delete o[k];
+  for (const o of [tombTasks, tombHist, tombPeople]) for (const k of Object.keys(o)) if (now - o[k] > 60 * 864e5) delete o[k];
 
+  // people, their colours and the order list travel together, newest-writer wins
   const newerPeople = (b.peopleMod || 0) > (a.peopleMod || 0) ? b : a;
   return {
-    version: 2,
-    people: newerPeople.people, peopleMod: newerPeople.peopleMod || 0,
-    tasks: liveTasks, history: liveHist, postponeLog: post,
-    tombs: { tasks: tombTasks, history: tombHist },
+    version: DATA_VERSION,
+    people: newerPeople.people, peopleMod: newerPeople.peopleMod || 0, order: newerPeople.order || [],
+    tasks: liveTasks, history: liveHist, postponeLog: post, takeoverLog: takeover,
+    tombs: { tasks: tombTasks, history: tombHist, people: tombPeople },
   };
 }
 function stableStr(v) {
@@ -1303,10 +1353,11 @@ function stableStr(v) {
 }
 function docEquals(a, b) {
   const pick = s => stableStr({
-    p: s.people, pm: s.peopleMod || 0,
+    p: s.people, pm: s.peopleMod || 0, o: s.order || [],
     t: [...s.tasks].sort((x, y) => x.id.localeCompare(y.id)),
     h: [...s.history].sort((x, y) => x.id.localeCompare(y.id)),
     l: [...s.postponeLog].map(stableStr).sort(),
+    k: [...(s.takeoverLog || [])].map(stableStr).sort(),
     d: s.tombs,
   });
   return pick(a) === pick(b);
@@ -1354,8 +1405,11 @@ async function pullNow() {
   } catch (e) { setSyncStatus("error"); }
 }
 function stateDoc() {
-  const { version, people, peopleMod, tasks, history, postponeLog, tombs } = state;
-  return { version, people, peopleMod: peopleMod || 0, tasks, history, postponeLog, tombs };
+  const { people, peopleMod, order, tasks, history, postponeLog, takeoverLog, tombs } = state;
+  return {
+    version: DATA_VERSION, people, peopleMod: peopleMod || 0, order: order || [],
+    tasks, history, postponeLog, takeoverLog: takeoverLog || [], tombs,
+  };
 }
 function applyRemote(row) {
   if (row.rev < sync.rev) return;
