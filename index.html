@@ -360,10 +360,12 @@ header.topbar h1 { font-size: 20px; font-weight: 450; letter-spacing: -0.01em; }
 
 .panel h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 600; color: var(--muted); }
 .panel h3 .sub { text-transform: none; letter-spacing: 0; font-weight: 500; }
-.pcards { gap: 0; }
-.pcard { padding: 16px 2px; border-top: 1px solid var(--hairline); border-radius: 0; }
-.pcard:first-child { padding-right: 18px; }
-.pcard + .pcard { border-left: 1px solid var(--hairline); padding-left: 18px; }
+.pcards { gap: 8px; }
+.pcard { padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; }
+.balance-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+.balance-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.week-col .wseg { width: 100%; max-width: 10px; }
+.week-col .wseg:first-child { border-radius: 3px 3px 0 0; }
 .pcard .name { font-size: 14px; font-weight: 600; }
 .pcard .stat b { font-weight: 600; }
 
@@ -469,7 +471,7 @@ table.stats th { letter-spacing: 0.09em; }
 "use strict";
 /* ================= state ================= */
 const KEY = "sparkle.v1";
-const APP_VERSION = "v11";  // bump together with the service-worker cache name
+const APP_VERSION = "v12";  // bump together with the service-worker cache name
 const DATA_VERSION = 3;    // on-disk data shape; bump when migrate() changes
 const MAX_PEOPLE = 8;
 // Person colour palette (8 slots). Each person stores an index into this list;
@@ -1088,44 +1090,42 @@ function inRange(dateIso) {
 
 function renderStats() {
   const el = document.getElementById("view-stats");
+  const mode = householdMode();
+  const ids = peopleIds();
   const hist = state.history.filter(h => inRange(h.completedDate));
   const post = state.postponeLog.filter(p => inRange(p.when));
+  const overs = (state.takeoverLog || []).filter(x => inRange(x.when));
 
   const total = hist.length;
   const onFirst = hist.filter(h => h.onFirst).length;
   const onFirstPct = total ? Math.round(onFirst / total * 100) : 0;
-  const by = p => hist.filter(h => h.person === p);
-  const postBy = p => post.filter(x => x.person === p).length;
+  const cntBy = id => hist.filter(h => h.person === id).length;
+  const ofBy = id => hist.filter(h => h.person === id && h.onFirst).length;
+  const postBy = id => post.filter(x => x.person === id).length;
+  const tookBy = id => overs.filter(x => x.to === id).length;      // took over
+  const takenBy = id => overs.filter(x => x.from === id).length;   // taken from
 
-  /* weekly chart: last 8 weeks, always (independent of range filter) */
+  /* weekly chart: last 8 weeks, per person */
   const weeks = [];
   let wk = mondayOf(todayIso());
   for (let i = 0; i < 8; i++) { weeks.unshift(wk); wk = addDays(wk, -7); }
   const wkData = weeks.map(w => {
     const end = addDays(w, 6);
     const inWk = state.history.filter(h => h.completedDate >= w && h.completedDate <= end);
-    return { w, p1: inWk.filter(h => h.person === "p1").length, p2: inWk.filter(h => h.person === "p2").length };
+    const counts = {}; ids.forEach(id => counts[id] = inWk.filter(h => h.person === id).length);
+    return { w, counts, tot: ids.reduce((s, id) => s + counts[id], 0) };
   });
-  const wkMax = Math.max(1, ...wkData.map(d => d.p1 + d.p2));
+  const wkMax = Math.max(1, ...wkData.map(d => d.tot));
   const barH = v => Math.round(v / wkMax * 88);
 
   /* per-task table */
   const byTask = new Map();
-  for (const h of hist) {
-    const k = h.title;
-    if (!byTask.has(k)) byTask.set(k, { icon: h.icon, p1: 0, p2: 0, onFirst: 0, post: 0 });
-    const row = byTask.get(k);
-    row[h.person]++;
-    if (h.onFirst) row.onFirst++;
-  }
-  for (const p of post) {
-    if (!byTask.has(p.title)) byTask.set(p.title, { icon: "", p1: 0, p2: 0, onFirst: 0, post: 0 });
-    byTask.get(p.title).post++;
-  }
-  const taskRows = [...byTask.entries()].sort((a, b) => (b[1].p1 + b[1].p2) - (a[1].p1 + a[1].p2));
-
-  const c1 = by("p1").length, c2 = by("p2").length;
-  const share1 = c1 + c2 ? c1 / (c1 + c2) * 100 : 50;
+  const ensure = (title, icon) => { if (!byTask.has(title)) byTask.set(title, { icon: icon || "", per: {}, onFirst: 0, post: 0, over: 0 }); return byTask.get(title); };
+  for (const h of hist) { const r = ensure(h.title, h.icon); r.per[h.person] = (r.per[h.person] || 0) + 1; if (h.onFirst) r.onFirst++; }
+  for (const p of post) ensure(p.title).post++;
+  for (const x of overs) ensure(x.title).over++;
+  const rowTot = r => ids.reduce((s, id) => s + (r.per[id] || 0), 0);
+  const taskRows = [...byTask.entries()].sort((a, b) => (rowTot(b[1]) + b[1].post) - (rowTot(a[1]) + a[1].post));
 
   let html = `
     <div class="filter-row"><div class="seg">
@@ -1134,7 +1134,7 @@ function renderStats() {
     </div></div>
 
     <div class="kpis">
-      <div class="tile"><div class="val">${total}</div><div class="lab">Tasks completed</div></div>
+      <div class="tile"><div class="val">${total}</div><div class="lab">${mode === "solo" ? "Tasks done" : "Tasks completed"}</div></div>
       <div class="tile"><div class="val">${onFirstPct}%</div><div class="lab">Done on first planned date (${onFirst})</div></div>
       <div class="tile"><div class="val">${post.length}</div><div class="lab">Postpones</div></div>
     </div>`;
@@ -1145,48 +1145,47 @@ function renderStats() {
     return;
   }
 
-  html += `
+  // Balance + per-person cards (Duo & Group only — nothing to compare in Solo)
+  if (mode !== "solo") {
+    html += `
     <div class="panel">
       <h3>Who's pulling their weight <span class="sub">· completed tasks</span></h3>
-      <div class="balance" role="img" aria-label="${esc(pname("p1"))} ${c1}, ${esc(pname("p2"))} ${c2}">
-        ${c1 ? `<div class="b1" style="width:${share1}%;background:${psv("p1")}"></div>` : ""}
-        ${c2 ? `<div class="b2" style="width:${100 - share1}%;background:${psv("p2")}"></div>` : ""}
+      <div class="balance" role="img" aria-label="${ids.map(id => esc(pname(id)) + " " + cntBy(id)).join(", ")}">
+        ${ids.filter(id => cntBy(id) > 0).map(id => `<div style="flex:${cntBy(id)};background:${psv(id)}"></div>`).join("")}
       </div>
-      <div class="balance-labels">
-        <span>${pdot("p1")} ${esc(pname("p1"))} · ${c1}</span>
-        <span>${esc(pname("p2"))} · ${c2} ${pdot("p2")}</span>
-      </div>
+      <div class="balance-legend">${ids.map(id => `<span>${pdot(id)} ${esc(pname(id))} · ${cntBy(id)}</span>`).join("")}</div>
     </div>
 
     <div class="pcards">
-      ${["p1", "p2"].map(p => {
-        const done = by(p);
-        const of = done.filter(h => h.onFirst).length;
+      ${ids.map(id => {
+        const done = cntBy(id), of = ofBy(id), net = tookBy(id) - takenBy(id);
         return `
         <div class="pcard">
-          <div class="name">${pdot(p)}${esc(pname(p))}</div>
-          <div class="stat"><span>Completed</span><b>${done.length}</b></div>
-          <div class="stat"><span>On first date</span><b>${done.length ? Math.round(of / done.length * 100) + "%" : "—"}</b></div>
-          <div class="stat"><span>Postpones</span><b>${postBy(p)}</b></div>
+          <div class="name">${pdot(id)}${esc(pname(id))}</div>
+          <div class="stat"><span>Completed</span><b>${done}</b></div>
+          <div class="stat"><span>On first date</span><b>${done ? Math.round(of / done * 100) + "%" : "—"}</b></div>
+          <div class="stat"><span>Postpones</span><b>${postBy(id)}</b></div>
+          <div class="stat"><span>Took over</span><b>${tookBy(id)}</b></div>
+          <div class="stat"><span>Taken from</span><b>${takenBy(id)}</b></div>
+          <div class="stat"><span>Net take-overs</span><b>${net > 0 ? "+" : ""}${net}</b></div>
         </div>`;
       }).join("")}
-    </div>
+    </div>`;
+  }
 
+  // Activity chart (all modes; single series in Solo)
+  html += `
     <div class="panel">
       <h3>Activity <span class="sub">· last 8 weeks</span></h3>
       <div class="weeks">
         ${wkData.map((d, i) => `
-          <div class="week-col" onclick="weekTip(this, ${i})" data-w="${d.w}" data-p1="${d.p1}" data-p2="${d.p2}">
-            <div class="total">${d.p1 + d.p2 || ""}</div>
-            ${d.p2 ? `<div class="seg2" style="height:${Math.max(4, barH(d.p2))}px;background:${psv("p2")}"></div>` : ""}
-            ${d.p1 ? `<div class="seg1" style="height:${Math.max(4, barH(d.p1))}px;background:${psv("p1")}"></div>` : ""}
+          <div class="week-col" onclick="weekTip(this, ${i})" data-w="${d.w}" data-bd="${esc(ids.filter(id => d.counts[id] > 0).map(id => pname(id) + " " + d.counts[id]).join(" · "))}">
+            <div class="total">${d.tot || ""}</div>
+            ${ids.slice().reverse().filter(id => d.counts[id] > 0).map(id => `<div class="wseg" style="height:${Math.max(4, barH(d.counts[id]))}px;background:${psv(id)}"></div>`).join("")}
           </div>`).join("")}
       </div>
       <div class="week-labels">${wkData.map(d => `<span>${fromIso(d.w).getDate()}/${fromIso(d.w).getMonth() + 1}</span>`).join("")}</div>
-      <div class="legend">
-        <span>${pdot("p1")}${esc(pname("p1"))}</span>
-        <span>${pdot("p2")}${esc(pname("p2"))}</span>
-      </div>
+      ${mode === "solo" ? "" : `<div class="legend">${ids.map(id => `<span>${pdot(id)}${esc(pname(id))}</span>`).join("")}</div>`}
     </div>
 
     <div class="panel">
@@ -1195,18 +1194,18 @@ function renderStats() {
         <table class="stats">
           <thead><tr>
             <th>Task</th>
-            <th><span class="th-dot">${pdot("p1")}${esc(pname("p1"))}</span></th>
-            <th><span class="th-dot">${pdot("p2")}${esc(pname("p2"))}</span></th>
+            ${mode === "solo" ? "<th>Done</th>" : ids.map(id => `<th><span class="th-dot">${pdot(id)}${esc(pname(id))}</span></th>`).join("")}
             <th>Moved</th>
+            ${mode === "solo" ? "" : "<th>Handed off</th>"}
             <th>On time</th>
           </tr></thead>
           <tbody>
             ${taskRows.map(([title, r]) => `
               <tr>
                 <td><span style="display:inline-flex;align-items:center;gap:6px">${iconSvg(r.icon || "✨", "ico-inline")}${esc(title)}</span></td>
-                <td>${r.p1 || "·"}</td>
-                <td>${r.p2 || "·"}</td>
+                ${mode === "solo" ? `<td>${rowTot(r) || "·"}</td>` : ids.map(id => `<td>${r.per[id] || "·"}</td>`).join("")}
                 <td>${r.post || "·"}</td>
+                ${mode === "solo" ? "" : `<td>${r.over || "·"}</td>`}
                 <td>${r.onFirst || "·"}</td>
               </tr>`).join("")}
           </tbody>
@@ -1225,7 +1224,7 @@ function weekTip(col, i) {
   const wkLabel = "Wk of " + w.getDate() + " " + w.toLocaleDateString(undefined, { month: "short" });
   const tip = document.createElement("div");
   tip.className = "tip";
-  tip.textContent = `${wkLabel} · ${pname("p1")} ${col.dataset.p1} · ${pname("p2")} ${col.dataset.p2}`;
+  tip.textContent = wkLabel + (col.dataset.bd ? " · " + col.dataset.bd : " · 0");
   col.appendChild(tip);
   setTimeout(() => tip.remove(), 3000);
 }
