@@ -1,6 +1,6 @@
 # ⚡ Real-time sync setup (one-time, ~10 minutes)
 
-Sparkle's real-time sync uses a free [Supabase](https://supabase.com) project as the shared home for your household's data. Both phones read and write the same record, so changes appear on the other phone within seconds. **Only one of you does this setup** — the other just pastes a pairing code.
+Sparkle's real-time sync uses a free [Supabase](https://supabase.com) project as the shared home for your household's data. Every phone in the household reads and writes the same record, so changes appear on the other phones within seconds. This works the same whether your household is 1, 2, or up to 8 people. **Only one person does this setup** — everyone else just pastes a pairing code.
 
 ## Part 1 — create the backend
 
@@ -31,12 +31,14 @@ alter publication supabase_realtime add table sparkle_state;
 ## Part 2 — connect the phones
 
 5. On **your** phone, open Sparkle → **Settings → ⚡ Set up real-time sync**. Paste the Project URL and the anon key, tap **Create household**. The app then offers the pairing code to share.
-6. Send the pairing code to your partner (iMessage/WhatsApp).
-7. On **your partner's** phone: Sparkle → **Settings → Set up real-time sync** → paste the code in the *Pairing code* box → **Pair this phone**. (A brand-new phone can also tap "I have a pairing code" right on the welcome screen.)
+6. Send the pairing code to everyone else in the household (iMessage/WhatsApp).
+7. On **each other** phone: Sparkle → **Settings → Set up real-time sync** → paste the code in the *Pairing code* box → **Pair this phone**. (A brand-new phone can also tap "I have a pairing code" right on the welcome screen.) Repeat for every phone that should share the schedule.
 
-That's it. Add or complete a task on one phone and watch it appear on the other. Both phones keep working offline; they catch up automatically when back online.
+That's it. Add or complete a task on one phone and watch it appear on the others. Every phone keeps working offline; they catch up automatically when back online.
 
-> **A note on privacy:** the pairing code contains the project URL, the anon key, and your household ID — anyone holding it can read and write your cleaning schedule (and nothing else). Share it only with each other. You can rotate the anon key in Supabase settings if it ever leaks.
+> **Household size:** Sparkle adapts its screens to how many people you add in **Settings → People** — a solo view for 1, the couple view for 2, and a group view for 3–8. The sync setup here is identical for all of them.
+
+> **A note on privacy:** the pairing code contains the project URL, the anon key, and your household ID — anyone holding it can read and write your cleaning schedule (and nothing else). Share it only within your household. You can rotate the anon key in Supabase settings if it ever leaks.
 
 ## Part 3 (optional) — tasks in the iPhone Calendar app
 
@@ -48,11 +50,11 @@ This publishes your planned tasks as a subscribable calendar feed that updates a
 4. In Sparkle: **Settings → 📅 Copy calendar feed link**.
 5. On each iPhone: **Settings → Apps → Calendar → Calendar Accounts → Add Account → Other → Add Subscribed Calendar** → paste the link.
 
-Planned tasks now show up as all-day events named like "🧹 Vacuum living room (Lisa)". iOS refreshes subscribed calendars periodically, so completed tasks disappear and new plans appear on their own.
+Planned tasks now show up as all-day events named like "🧹 Vacuum living room (Lisa)" — the name in brackets is whoever the task is assigned to, so this works the same for any household size. iOS refreshes subscribed calendars periodically, so completed tasks disappear and new plans appear on their own.
 
 ## Part 4 (optional) — push notifications
 
-A morning summary of today's tasks, and a ping when your partner completes something. Works on iPhone for web apps **installed on the Home Screen** (iOS 16.4+).
+A morning summary of today's tasks, and a ping when someone else completes something. Works on iPhone for web apps **installed on the Home Screen** (iOS 16.4+).
 
 1. In the **SQL Editor**, run:
 
@@ -100,9 +102,11 @@ select cron.schedule(
        body    := '{"action":"remind"}'::jsonb) $$);
 ```
 
-4. On each iPhone, in Sparkle: **Settings → Notifications** → tap your own name → allow notifications. Each phone opts in for itself and can toggle "Morning summary" and "Partner completions" separately.
+4. On each iPhone, in Sparkle: **Settings → Notifications** → tap your own name → allow notifications. Each phone opts in for itself and can toggle its two notification types separately. (A one-person household just taps **Enable notifications** — there's no name to pick and no "someone else completed" ping.)
 
-> The morning reminder is sent at most once per 6 hours no matter how often the schedule fires, and notes which tasks are yours vs. your partner's. If a phone revokes permission, its subscription is cleaned up automatically on the next send.
+> The morning reminder is sent at most once per 6 hours no matter how often the schedule fires, and is personalised per phone: it always lists *your* due tasks by name, then summarises the rest. In a couple it names the other person ("2 for Ana"); in a 3+ household it says "3 for the others"; solo just shows your own. If a phone revokes permission, its subscription is cleaned up automatically on the next send.
+
+> **Redeploying for a bigger household:** the personalised "for the others" wording for 3+ people comes from the latest `push` function code. If you set this up a while ago and later grow past two people, redeploy the `push` function (repeat step 2) to pick it up — everything else keeps working in the meantime.
 
 ## Troubleshooting
 
