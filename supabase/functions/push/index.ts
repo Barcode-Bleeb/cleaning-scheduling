@@ -115,12 +115,15 @@ Deno.serve(async (req) => {
         .select("endpoint, sub, person").eq("household", hh.household).eq("remind", true);
       for (const s of subs || []) {
         const mine = due.filter((t: any) => t.person === s.person);
-        const partnerId = s.person === "p1" ? "p2" : "p1";
-        const partnerName = doc.people?.[partnerId]?.name || "your partner";
-        const theirs = due.length - mine.length;
+        const otherTasks = due.filter((t: any) => t.person !== s.person);
+        const otherPeople = [...new Set(otherTasks.map((t: any) => t.person))];
+        // name the single other person (couples); say "the others" for 3+
+        const othersLabel = otherPeople.length === 1
+          ? "for " + (doc.people?.[otherPeople[0] as string]?.name || "your partner")
+          : "for the others";
         const parts = [];
         if (mine.length) parts.push(`${mine.length} for you (${mine.map((t: any) => t.title).slice(0, 3).join(", ")}${mine.length > 3 ? "…" : ""})`);
-        if (theirs) parts.push(`${theirs} for ${partnerName}`);
+        if (otherTasks.length) parts.push(`${otherTasks.length} ${othersLabel}`);
         const status = await deliver(client, vapid, s, {
           title: `🧽 Today at home: ${due.length} task${due.length > 1 ? "s" : ""}`,
           body: parts.join(" · ") || "All caught up!",
