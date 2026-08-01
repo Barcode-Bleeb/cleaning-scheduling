@@ -404,6 +404,21 @@ table.stats th { letter-spacing: 0.09em; }
 .pchip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: 999px;
   background: var(--wash); font-size: 14px; font-weight: 600; color: var(--ink-2); border: 1.5px solid transparent; }
 .pchip.active { border-color: var(--ink); color: var(--ink); }
+/* people manager (Settings) */
+.person-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--hairline); }
+.person-row:last-of-type { border-bottom: none; }
+.swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--hairline); flex: none; padding: 0; }
+.person-name { flex: 1; min-width: 0; }
+.person-actions { display: flex; gap: 5px; flex: none; }
+.icon-btn { width: 32px; height: 32px; border-radius: 9px; background: var(--wash); font-size: 13px; color: var(--ink-2);
+  display: inline-flex; align-items: center; justify-content: center; }
+.icon-btn[disabled] { opacity: 0.3; }
+.icon-btn.danger { color: var(--danger); }
+.swatch-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+.swatch-big { width: 46px; height: 46px; border-radius: 50%; border: 2.5px solid transparent; color: #fff;
+  font-weight: 700; font-size: 18px; display: inline-flex; align-items: center; justify-content: center; }
+.swatch-big.active { border-color: var(--ink); }
+.swatch-big[disabled] { opacity: 0.28; }
 .note-box {
   background: var(--wash); border-radius: 12px; padding: 11px 13px;
   font-size: 14.5px; color: var(--ink-2); line-height: 1.45; margin: 0 0 14px;
@@ -471,7 +486,7 @@ table.stats th { letter-spacing: 0.09em; }
 "use strict";
 /* ================= state ================= */
 const KEY = "sparkle.v1";
-const APP_VERSION = "v12";  // bump together with the service-worker cache name
+const APP_VERSION = "v13";  // bump together with the service-worker cache name
 const DATA_VERSION = 3;    // on-disk data shape; bump when migrate() changes
 const MAX_PEOPLE = 8;
 // Person colour palette (8 slots). Each person stores an index into this list;
@@ -643,7 +658,8 @@ function pwv(pid) { return `var(--pw-${pcolour(pid)})`; }   // wash (avatars)
 function pdot(pid) { return `<span class="dot" style="background:${psv(pid)}"></span>`; }
 function colourInUse(idx, exceptId) { return state.order.some(id => id !== exceptId && pcolour(id) === idx); }
 /* ---- household size & mode (Solo / Duo / Group), derived from headcount ---- */
-function peopleIds() { return (state.order || []).filter(id => state.people[id]); }
+function peopleIds() { return (state.order || []).filter(id => state.people[id] && !state.people[id].retired); }
+function retiredIds() { return (state.order || []).filter(id => state.people[id] && state.people[id].retired); }
 function peopleCount() { return peopleIds().length; }
 function householdMode() { const n = peopleCount(); return n <= 1 ? "solo" : n === 2 ? "duo" : "group"; }
 function applyMode() { const app = document.getElementById("app"); if (app) app.dataset.mode = householdMode(); }
@@ -1234,17 +1250,17 @@ function renderSettings() {
   const el = document.getElementById("view-settings");
   el.innerHTML = `
     <div class="settings-group">
-      <h3>Household</h3>
+      <h3>People${householdMode() === "group" ? " · order = whose turn is next" : ""}</h3>
       <div class="settings-card">
-        <div class="field">
-          <label>${pdot("p1")} Person 1</label>
-          <input type="text" id="s-p1" value="${esc(pname("p1"))}" onchange="renamePerson('p1', this.value)">
-        </div>
-        <div class="field">
-          <label>${pdot("p2")} Person 2</label>
-          <input type="text" id="s-p2" value="${esc(pname("p2"))}" onchange="renamePerson('p2', this.value)">
-        </div>
+        ${peopleIds().map((id, i) => personRow(id, i)).join("")}
+        ${peopleIds().length < MAX_PEOPLE
+          ? `<button class="btn block" onclick="addPerson()" style="margin-top:10px">＋ Add person</button>`
+          : `<p class="hint" style="font-size:12px;color:var(--muted);margin-top:8px">Maximum of ${MAX_PEOPLE} people.</p>`}
       </div>
+      ${retiredIds().length ? `<div class="settings-card" style="margin-top:8px">
+        <p style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Retired · kept in history</p>
+        ${retiredIds().map(id => `<div class="person-row"><span class="dot" style="background:${psv(id)}"></span><span style="flex:1">${esc(pname(id))}</span><button class="btn small" onclick="unretirePerson('${id}')">Bring back</button></div>`).join("")}
+      </div>` : ""}
     </div>
 
     <div class="settings-group">
@@ -1289,9 +1305,8 @@ function renderSettings() {
           <p style="margin-bottom:12px">Get a morning summary of today's tasks and a ping when your partner completes something. Each phone opts in for itself. Requires the push function from SYNC-SETUP.md Part 4${needsInstall() ? " and the app installed via Share → Add to Home Screen" : ""}.</p>
           <div class="field">
             <label>Whose phone is this?</label>
-            <div class="row2">
-              <button class="btn" onclick="enableNotifications('p1')">${pdot("p1")}&nbsp;${esc(pname("p1"))}</button>
-              <button class="btn" onclick="enableNotifications('p2')">${pdot("p2")}&nbsp;${esc(pname("p2"))}</button>
+            <div class="pchips">
+              ${peopleIds().map(id => `<button class="pchip" onclick="enableNotifications('${id}')">${pdot(id)}&nbsp;${esc(pname(id))}</button>`).join("")}
             </div>
           </div>
         `}
@@ -1323,7 +1338,20 @@ function renderSettings() {
         <button class="btn danger block" onclick="eraseAll()">Erase all data</button>
       </div>
     </div>
-    <p style="text-align:center;color:var(--muted);font-size:12px;margin-top:8px">Sparkle ${APP_VERSION} · made for two 🧽✨</p>`;
+    <p style="text-align:center;color:var(--muted);font-size:12px;margin-top:8px">Sparkle ${APP_VERSION} 🧽✨</p>`;
+}
+function personRow(id, i) {
+  const group = householdMode() === "group";
+  const last = peopleIds().length - 1;
+  return `<div class="person-row">
+    <button class="swatch" style="background:${psv(id)}" onclick="openColourPicker('${id}')" aria-label="change colour"></button>
+    <input type="text" class="person-name" value="${esc(pname(id))}" placeholder="Name" onchange="renamePerson('${id}', this.value)">
+    <div class="person-actions">
+      ${group ? `<button class="icon-btn" onclick="movePerson('${id}',-1)" ${i === 0 ? "disabled" : ""} aria-label="move up">▲</button>
+                 <button class="icon-btn" onclick="movePerson('${id}',1)" ${i === last ? "disabled" : ""} aria-label="move down">▼</button>` : ""}
+      ${peopleIds().length > 1 ? `<button class="icon-btn danger" onclick="removePerson('${id}')" aria-label="remove">✕</button>` : ""}
+    </div>
+  </div>`;
 }
 function renamePerson(p, v) {
   v = v.trim();
@@ -1332,6 +1360,73 @@ function renamePerson(p, v) {
   state.peopleMod = Date.now();
   save();
   toast("Name updated");
+}
+function addPerson() {
+  if (peopleIds().length >= MAX_PEOPLE) { toast(`Up to ${MAX_PEOPLE} people`); return; }
+  const id = "p" + Math.random().toString(36).slice(2, 8);
+  state.people[id] = { name: "", colour: nextFreeColour(state.people) };
+  if (!state.order.includes(id)) state.order.push(id);
+  delete state.tombs.people[id];               // in case an id ever collides with a tombstone
+  state.peopleMod = Date.now();
+  save(); render();
+  setTimeout(() => { const rows = document.querySelectorAll(".person-name"); const el = rows[rows.length - 1]; if (el) el.focus(); }, 60);
+}
+function removePerson(id) {
+  const active = peopleIds();
+  if (active.length <= 1) { toast("A household needs at least one person"); return; }
+  const fallback = active.find(x => x !== id);
+  if (!confirm(`Remove ${pname(id) || "this person"}? Any of their tasks move to ${pname(fallback)}, and their history is kept.`)) return;
+  state.tasks.forEach(t => {
+    let ch = false;
+    if (t.person === id) { t.person = fallback; ch = true; }
+    if (t.owner === id) { t.owner = fallback; ch = true; }
+    if (ch) t.mod = Date.now();
+  });
+  const hasPast = state.history.some(h => h.person === id) || (state.takeoverLog || []).some(x => x.from === id || x.to === id);
+  if (hasPast) {
+    state.people[id].retired = true;            // keep the name for stats/history
+  } else {
+    delete state.people[id];                    // never used → hard delete
+    state.order = state.order.filter(x => x !== id);
+    state.tombs.people[id] = Date.now();
+  }
+  state.peopleMod = Date.now();
+  save(); render();
+  toast("Removed");
+}
+function unretirePerson(id) {
+  if (peopleIds().length >= MAX_PEOPLE) { toast(`Up to ${MAX_PEOPLE} active people`); return; }
+  delete state.people[id].retired;
+  if (colourInUse(state.people[id].colour, id)) state.people[id].colour = nextFreeColour(state.people);
+  state.peopleMod = Date.now();
+  save(); render();
+  toast(`${pname(id)} is back`);
+}
+function movePerson(id, dir) {
+  const active = peopleIds();
+  const target = active[active.indexOf(id) + dir];
+  if (!target) return;
+  const o = state.order, i = o.indexOf(id), j = o.indexOf(target);
+  [o[i], o[j]] = [o[j], o[i]];
+  state.peopleMod = Date.now();
+  save(); render();
+}
+function openColourPicker(id) {
+  openSheet(`
+    <h2>Colour for ${esc(pname(id)) || "this person"}</h2>
+    <div class="swatch-grid">
+      ${PALETTE.map((c, idx) => {
+        const used = colourInUse(idx, id), mine = pcolour(id) === idx;
+        return `<button class="swatch-big ${mine ? "active" : ""}" style="background:var(--ps-${idx})" ${used && !mine ? "disabled" : ""} onclick="setPersonColour('${id}',${idx})" aria-label="colour ${idx + 1}">${mine ? "✓" : ""}</button>`;
+      }).join("")}
+    </div>
+    <p class="hint" style="font-size:12px;color:var(--muted);margin-top:12px">Greyed-out colours are already used by someone else — everyone gets their own.</p>`);
+}
+function setPersonColour(id, idx) {
+  if (colourInUse(idx, id)) { toast("That colour's taken"); return; }
+  state.people[id].colour = idx;
+  state.peopleMod = Date.now();
+  save(); closeSheet(); render();
 }
 async function exportData() {
   const payload = JSON.stringify(state);
@@ -1431,11 +1526,16 @@ function mergeDocs(a, b) {
   // prune tombstones older than 60 days
   for (const o of [tombTasks, tombHist, tombPeople]) for (const k of Object.keys(o)) if (now - o[k] > 60 * 864e5) delete o[k];
 
-  // people, their colours and the order list travel together, newest-writer wins
+  // people, their colours and the order list travel together, newest-writer wins;
+  // then any hard-deleted (tombstoned) person is removed so a concurrent edit on
+  // the other phone can't resurrect them (retired people are NOT tombstoned).
   const newerPeople = (b.peopleMod || 0) > (a.peopleMod || 0) ? b : a;
+  const mergedPeople = { ...newerPeople.people };
+  let mergedOrder = (newerPeople.order || []).slice();
+  for (const id of Object.keys(tombPeople)) { delete mergedPeople[id]; mergedOrder = mergedOrder.filter(x => x !== id); }
   return {
     version: DATA_VERSION,
-    people: newerPeople.people, peopleMod: newerPeople.peopleMod || 0, order: newerPeople.order || [],
+    people: mergedPeople, peopleMod: newerPeople.peopleMod || 0, order: mergedOrder,
     tasks: liveTasks, history: liveHist, postponeLog: post, takeoverLog: takeover,
     tombs: { tasks: tombTasks, history: tombHist, people: tombPeople },
   };
