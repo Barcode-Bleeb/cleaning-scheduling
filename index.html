@@ -366,6 +366,18 @@ header.topbar h1 { font-size: 20px; font-weight: 450; letter-spacing: -0.01em; }
 .balance-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .week-col .wseg { width: 100%; max-width: 10px; }
 .week-col .wseg:first-child { border-radius: 3px 3px 0 0; }
+.task-filter { margin: 2px 0 12px; font-size: 14px; padding: 8px 10px; }
+/* by-task as a compact card list (no horizontal scroll) */
+.taskstat { padding: 11px 0; border-bottom: 1px solid var(--hairline); }
+.taskstat:last-child { border-bottom: none; }
+.taskstat-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.taskstat-title { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 7px; font-weight: 600; font-size: 14.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.taskstat-tot { flex: none; font-weight: 700; font-size: 15px; }
+.mini-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 2px; background: var(--wash); margin: 7px 0 6px; }
+.taskstat-legend { display: flex; flex-wrap: wrap; gap: 3px 12px; font-size: 12px; color: var(--ink-2); font-weight: 600; margin-bottom: 4px; }
+.taskstat-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.taskstat-meta { font-size: 12px; color: var(--muted); }
 .pcard .name { font-size: 14px; font-weight: 600; }
 .pcard .stat b { font-weight: 600; }
 
@@ -485,7 +497,7 @@ table.stats th { letter-spacing: 0.09em; }
 "use strict";
 /* ================= state ================= */
 const KEY = "sparkle.v1";
-const APP_VERSION = "v14";  // bump together with the service-worker cache name
+const APP_VERSION = "v15";  // bump together with the service-worker cache name
 const DATA_VERSION = 3;    // on-disk data shape; bump when migrate() changes
 const MAX_PEOPLE = 8;
 // Person colour palette (8 slots). Each person stores an index into this list;
@@ -1122,6 +1134,8 @@ function saveTaskForm() {
 /* ================= stats ================= */
 let statsRange = "all"; // all | 90 | 30 | 7
 function setRange(r) { statsRange = r; renderStats(); }
+let statsTask = ""; // "" = all tasks; else a task title to focus the activity chart
+function setStatsTask(v) { statsTask = v; renderStats(); }
 function inRange(dateIso) {
   if (statsRange === "all") return true;
   return daysBetween(dateIso, todayIso()) < Number(statsRange);
@@ -1144,13 +1158,15 @@ function renderStats() {
   const tookBy = id => overs.filter(x => x.to === id).length;      // took over
   const takenBy = id => overs.filter(x => x.from === id).length;   // taken from
 
-  /* weekly chart: last 8 weeks, per person */
+  /* weekly chart: last 8 weeks, per person, optionally focused on one task */
+  const allTitles = [...new Set(state.history.map(h => h.title))].sort((a, b) => a.localeCompare(b));
+  if (statsTask && !allTitles.includes(statsTask)) statsTask = "";
   const weeks = [];
   let wk = mondayOf(todayIso());
   for (let i = 0; i < 8; i++) { weeks.unshift(wk); wk = addDays(wk, -7); }
   const wkData = weeks.map(w => {
     const end = addDays(w, 6);
-    const inWk = state.history.filter(h => h.completedDate >= w && h.completedDate <= end);
+    const inWk = state.history.filter(h => h.completedDate >= w && h.completedDate <= end && (!statsTask || h.title === statsTask));
     const counts = {}; ids.forEach(id => counts[id] = inWk.filter(h => h.person === id).length);
     return { w, counts, tot: ids.reduce((s, id) => s + counts[id], 0) };
   });
@@ -1212,10 +1228,14 @@ function renderStats() {
     </div>`;
   }
 
-  // Activity chart (all modes; single series in Solo)
+  // Activity chart (all modes; single series in Solo), focusable on one task
   html += `
     <div class="panel">
-      <h3>Activity <span class="sub">· last 8 weeks</span></h3>
+      <h3>Activity <span class="sub">· last 8 weeks${statsTask ? " · " + esc(statsTask) : ""}</span></h3>
+      ${allTitles.length ? `<select class="task-filter" onchange="setStatsTask(this.value)">
+        <option value="">All tasks</option>
+        ${allTitles.map(t => `<option value="${esc(t)}" ${statsTask === t ? "selected" : ""}>${esc(t)}</option>`).join("")}
+      </select>` : ""}
       <div class="weeks">
         ${wkData.map((d, i) => `
           <div class="week-col" onclick="weekTip(this, ${i})" data-w="${d.w}" data-bd="${esc(ids.filter(id => d.counts[id] > 0).map(id => pname(id) + " " + d.counts[id]).join(" · "))}">
@@ -1229,27 +1249,26 @@ function renderStats() {
 
     <div class="panel">
       <h3>By task</h3>
-      <div style="overflow-x:auto">
-        <table class="stats">
-          <thead><tr>
-            <th>Task</th>
-            ${mode === "solo" ? "<th>Done</th>" : ids.map(id => `<th><span class="th-dot">${pdot(id)}${esc(pname(id))}</span></th>`).join("")}
-            <th>Moved</th>
-            ${mode === "solo" ? "" : "<th>Handed off</th>"}
-            <th>On time</th>
-          </tr></thead>
-          <tbody>
-            ${taskRows.map(([title, r]) => `
-              <tr>
-                <td><span style="display:inline-flex;align-items:center;gap:6px">${iconSvg(r.icon || "✨", "ico-inline")}${esc(title)}</span></td>
-                ${mode === "solo" ? `<td>${rowTot(r) || "·"}</td>` : ids.map(id => `<td>${r.per[id] || "·"}</td>`).join("")}
-                <td>${r.post || "·"}</td>
-                ${mode === "solo" ? "" : `<td>${r.over || "·"}</td>`}
-                <td>${r.onFirst || "·"}</td>
-              </tr>`).join("")}
-          </tbody>
-        </table>
-      </div>
+      ${taskRows.map(([title, r]) => {
+        const tot = rowTot(r);
+        const meta = [`${r.onFirst} on time`, r.post ? `${r.post} moved` : "", (mode !== "solo" && r.over) ? `${r.over} handed off` : ""].filter(Boolean).join(" · ");
+        return `<div class="taskstat">
+          <div class="taskstat-head">
+            <span class="taskstat-title">${iconSvg(r.icon || "✨", "ico-inline")} ${esc(title)}</span>
+            <span class="taskstat-tot">${tot}</span>
+          </div>
+          ${mode !== "solo" && tot > 0 ? `
+          <div class="mini-bar">${ids.filter(id => r.per[id] > 0).map(id => `<div style="flex:${r.per[id]};background:${psv(id)}"></div>`).join("")}</div>
+          <div class="taskstat-legend">${ids.filter(id => r.per[id] > 0).map(id => `<span>${pdot(id)} ${esc(pname(id))} ${r.per[id]}</span>`).join("")}</div>` : ""}
+          <div class="taskstat-meta">${meta}</div>
+        </div>`;
+      }).join("")}
+    </div>
+
+    <div class="panel">
+      <h3>Share a report</h3>
+      <p style="font-size:13px;color:var(--ink-2);margin-bottom:10px">A full written summary of a month, quarter, half-year or year — to share and discuss together.</p>
+      <button class="btn primary block" onclick="openReportSheet()">📄 Export a report</button>
     </div>`;
 
   el.innerHTML = html;
@@ -1266,6 +1285,148 @@ function weekTip(col, i) {
   tip.textContent = wkLabel + (col.dataset.bd ? " · " + col.dataset.bd : " · 0");
   col.appendChild(tip);
   setTimeout(() => tip.remove(), 3000);
+}
+
+/* ================= report export ================= */
+function pcHex(id) { return PALETTE[pcolour(id)].s; }
+function reportPeriod(key) {
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  const pad = n => String(n).padStart(2, "0");
+  if (key === "month")   return { from: `${y}-${pad(m + 1)}-01`, to: todayIso(), label: now.toLocaleDateString(undefined, { month: "long", year: "numeric" }) };
+  if (key === "quarter") { const qs = Math.floor(m / 3) * 3; return { from: `${y}-${pad(qs + 1)}-01`, to: todayIso(), label: `Q${Math.floor(m / 3) + 1} ${y}` }; }
+  if (key === "half")    { const hs = m < 6 ? 0 : 6; return { from: `${y}-${pad(hs + 1)}-01`, to: todayIso(), label: `${m < 6 ? "H1" : "H2"} ${y}` }; }
+  if (key === "year")    return { from: `${y}-01-01`, to: todayIso(), label: `${y}` };
+  return { from: "0000-01-01", to: todayIso(), label: "All time" };
+}
+function openReportSheet() {
+  openSheet(`
+    <h2>Export a report</h2>
+    <p style="font-size:13.5px;color:var(--ink-2);margin:-6px 0 14px">Pick a period. The report opens so you can view it, share it, or save it as a PDF (Share → Print → pinch out → share).</p>
+    <div class="action-list">
+      ${[["month", "This month"], ["quarter", "This quarter"], ["half", "This half-year"], ["year", "This year"], ["all", "All time"]]
+        .map(([k, l]) => `<button class="btn" onclick="exportReport('${k}')">${l}</button>`).join("")}
+    </div>`);
+}
+function buildReport(from, to, label) {
+  const ids = peopleIds();
+  const inR = d => d >= from && d <= to;
+  const hist = state.history.filter(h => inR(h.completedDate));
+  const post = state.postponeLog.filter(p => inR(p.when));
+  const overs = (state.takeoverLog || []).filter(x => inR(x.when));
+  const total = hist.length;
+  const onFirst = hist.filter(h => h.onFirst).length;
+  const cntBy = id => hist.filter(h => h.person === id).length;
+  const ofBy = id => hist.filter(h => h.person === id && h.onFirst).length;
+  const postBy = id => post.filter(x => x.person === id).length;
+  const tookBy = id => overs.filter(x => x.to === id).length;
+  const takenBy = id => overs.filter(x => x.from === id).length;
+
+  const byTask = new Map();
+  const ens = (t, ic) => { if (!byTask.has(t)) byTask.set(t, { icon: ic || "", per: {}, onFirst: 0, post: 0, over: 0 }); return byTask.get(t); };
+  for (const h of hist) { const r = ens(h.title, h.icon); r.per[h.person] = (r.per[h.person] || 0) + 1; if (h.onFirst) r.onFirst++; }
+  for (const p of post) ens(p.title).post++;
+  for (const x of overs) ens(x.title).over++;
+  const rowTot = r => ids.reduce((s, id) => s + (r.per[id] || 0), 0);
+  const rows = [...byTask.entries()].sort((a, b) => (rowTot(b[1]) + b[1].post) - (rowTot(a[1]) + a[1].post));
+
+  const people = ids.map(id => ({ id, name: pname(id), c: pcHex(id) }));
+  const dot = c => `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c};vertical-align:middle"></span>`;
+  const sum = ids.reduce((s, id) => s + cntBy(id), 0) || 1;
+
+  const perPersonRows = people.map(p => `
+    <tr>
+      <td>${dot(p.c)} <strong>${esc(p.name)}</strong></td>
+      <td>${cntBy(p.id)}</td>
+      <td>${Math.round(cntBy(p.id) / sum * 100)}%</td>
+      <td>${cntBy(p.id) ? Math.round(ofBy(p.id) / cntBy(p.id) * 100) + "%" : "—"}</td>
+      <td>${postBy(p.id)}</td>
+      <td>${tookBy(p.id)}</td>
+      <td>${takenBy(p.id)}</td>
+      <td>${(tookBy(p.id) - takenBy(p.id)) > 0 ? "+" : ""}${tookBy(p.id) - takenBy(p.id)}</td>
+    </tr>`).join("");
+
+  const taskTableRows = rows.map(([title, r]) => `
+    <tr>
+      <td>${esc(title)}</td>
+      ${people.map(p => `<td>${r.per[p.id] || "·"}</td>`).join("")}
+      <td><strong>${rowTot(r)}</strong></td>
+      <td>${r.post || "·"}</td>
+      <td>${r.over || "·"}</td>
+      <td>${r.onFirst || "·"}</td>
+    </tr>`).join("");
+
+  const solo = ids.length < 2;
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sparkle report — ${esc(label)}</title>
+<style>
+  @media print { @page { margin: 14mm; } }
+  body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #1c1b18; background: #fbfbfa; margin: 0; padding: 22px 18px 40px; line-height: 1.5; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  .head { border-bottom: 3px solid #D6A320; padding-bottom: 12px; margin-bottom: 18px; }
+  .kick { font-size: 12px; letter-spacing: 0.15em; text-transform: uppercase; color: #8A6FC7; font-weight: 700; }
+  h1 { font-size: 26px; margin: 4px 0 2px; }
+  .meta { color: #55534e; font-size: 13px; }
+  h2 { font-size: 15px; margin: 24px 0 8px; border-left: 4px solid #8A6FC7; padding-left: 9px; }
+  .kpis { display: flex; gap: 10px; flex-wrap: wrap; }
+  .kpi { flex: 1; min-width: 120px; border: 1px solid #e5e2d8; border-radius: 12px; padding: 12px 14px; background: #fff; }
+  .kpi .v { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+  .kpi .l { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #8e887c; margin-top: 3px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 4px; }
+  th, td { border: 1px solid #e0ddd3; padding: 6px 9px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  th { background: #f1efe8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: #55534e; }
+  .balance { display: flex; height: 14px; border-radius: 7px; overflow: hidden; gap: 2px; background: #eee; margin: 4px 0 8px; }
+  .legend { font-size: 13px; color: #55534e; }
+  .foot { margin-top: 26px; color: #8e887c; font-size: 12px; text-align: center; }
+</style></head><body><div class="wrap">
+  <div class="head">
+    <div class="kick">Sparkle · cleaning report</div>
+    <h1>${esc(label)}</h1>
+    <div class="meta">${esc(people.map(p => p.name).join(", "))} &nbsp;·&nbsp; generated ${new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}</div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v">${total}</div><div class="l">Tasks completed</div></div>
+    <div class="kpi"><div class="v">${total ? Math.round(onFirst / total * 100) : 0}%</div><div class="l">On first planned date</div></div>
+    <div class="kpi"><div class="v">${post.length}</div><div class="l">Postpones</div></div>
+    <div class="kpi"><div class="v">${overs.length}</div><div class="l">Take-overs</div></div>
+  </div>
+
+  ${solo ? "" : `
+  <h2>Who did what</h2>
+  <div class="balance">${people.filter(p => cntBy(p.id) > 0).map(p => `<div style="flex:${cntBy(p.id)};background:${p.c}"></div>`).join("")}</div>
+  <div class="legend">${people.map(p => `${dot(p.c)} ${esc(p.name)} — ${cntBy(p.id)} (${Math.round(cntBy(p.id) / sum * 100)}%)`).join(" &nbsp; ")}</div>
+  <table>
+    <thead><tr><th>Person</th><th>Done</th><th>Share</th><th>On time</th><th>Postpones</th><th>Took over</th><th>Taken from</th><th>Net</th></tr></thead>
+    <tbody>${perPersonRows}</tbody>
+  </table>`}
+
+  <h2>By task</h2>
+  <table>
+    <thead><tr><th>Task</th>${people.map(p => `<th>${esc(p.name)}</th>`).join("")}<th>Total</th><th>Moved</th><th>Handed off</th><th>On time</th></tr></thead>
+    <tbody>${taskTableRows || `<tr><td colspan="${people.length + 5}">No completed tasks in this period.</td></tr>`}</tbody>
+  </table>
+
+  <div class="foot">Made with Sparkle ${APP_VERSION} · a cleaning planner. Numbers cover ${esc(from)} → ${esc(to)}.</div>
+</div></body></html>`;
+}
+async function exportReport(key) {
+  const { from, to, label } = reportPeriod(key);
+  const html = buildReport(from, to, label);
+  const fname = "sparkle-report-" + label.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".html";
+  closeSheet();
+  try {
+    const file = new File([html], fname, { type: "text/html" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Sparkle report — " + label }); return; }
+  } catch (e) { if (e.name === "AbortError") return; }
+  // fallbacks: open in a new tab, else download
+  try {
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    const win = window.open(url, "_blank");
+    if (!win) { const a = document.createElement("a"); a.href = url; a.download = fname; a.click(); }
+    setTimeout(() => URL.revokeObjectURL(url), 20000);
+    toast("Report ready 📄");
+  } catch (e) { toast("Couldn't open the report"); }
 }
 
 /* ================= settings ================= */
