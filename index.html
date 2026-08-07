@@ -497,7 +497,7 @@ table.stats th { letter-spacing: 0.09em; }
 "use strict";
 /* ================= state ================= */
 const KEY = "sparkle.v1";
-const APP_VERSION = "v15";  // bump together with the service-worker cache name
+const APP_VERSION = "v16";  // bump together with the service-worker cache name
 const DATA_VERSION = 3;    // on-disk data shape; bump when migrate() changes
 const MAX_PEOPLE = 8;
 // Person colour palette (8 slots). Each person stores an index into this list;
@@ -1360,7 +1360,8 @@ function buildReport(from, to, label) {
 <title>Sparkle report — ${esc(label)}</title>
 <style>
   @media print { @page { margin: 14mm; } }
-  body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #1c1b18; background: #fbfbfa; margin: 0; padding: 22px 18px 40px; line-height: 1.5; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #1c1b18; background: #fbfbfa; margin: 0; padding: 22px 16px 40px; line-height: 1.5; }
   .wrap { max-width: 760px; margin: 0 auto; }
   .head { border-bottom: 3px solid #D6A320; padding-bottom: 12px; margin-bottom: 18px; }
   .kick { font-size: 12px; letter-spacing: 0.15em; text-transform: uppercase; color: #8A6FC7; font-weight: 700; }
@@ -1371,10 +1372,12 @@ function buildReport(from, to, label) {
   .kpi { flex: 1; min-width: 120px; border: 1px solid #e5e2d8; border-radius: 12px; padding: 12px 14px; background: #fff; }
   .kpi .v { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
   .kpi .l { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #8e887c; margin-top: 3px; }
-  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 4px; }
-  th, td { border: 1px solid #e0ddd3; padding: 6px 9px; text-align: right; }
-  th:first-child, td:first-child { text-align: left; }
-  th { background: #f1efe8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: #55534e; }
+  .tw { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 4px 0 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 0; }
+  th, td { border: 1px solid #e0ddd3; padding: 6px 8px; text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; white-space: normal; }
+  th { background: #f1efe8; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.02em; color: #55534e; font-weight: 700; }
+  @media (max-width: 560px) { body { padding: 18px 12px 36px; } th, td { padding: 5px 6px; font-size: 11.5px; } th { font-size: 9.5px; } h1 { font-size: 22px; } }
   .balance { display: flex; height: 14px; border-radius: 7px; overflow: hidden; gap: 2px; background: #eee; margin: 4px 0 8px; }
   .legend { font-size: 13px; color: #55534e; }
   .foot { margin-top: 26px; color: #8e887c; font-size: 12px; text-align: center; }
@@ -1396,16 +1399,16 @@ function buildReport(from, to, label) {
   <h2>Who did what</h2>
   <div class="balance">${people.filter(p => cntBy(p.id) > 0).map(p => `<div style="flex:${cntBy(p.id)};background:${p.c}"></div>`).join("")}</div>
   <div class="legend">${people.map(p => `${dot(p.c)} ${esc(p.name)} — ${cntBy(p.id)} (${Math.round(cntBy(p.id) / sum * 100)}%)`).join(" &nbsp; ")}</div>
-  <table>
-    <thead><tr><th>Person</th><th>Done</th><th>Share</th><th>On time</th><th>Postpones</th><th>Took over</th><th>Taken from</th><th>Net</th></tr></thead>
+  <div class="tw"><table>
+    <thead><tr><th>Person</th><th>Done</th><th>Share</th><th>On&nbsp;time</th><th>Postp.</th><th>Took</th><th>Taken</th><th>Net</th></tr></thead>
     <tbody>${perPersonRows}</tbody>
-  </table>`}
+  </table></div>`}
 
   <h2>By task</h2>
-  <table>
-    <thead><tr><th>Task</th>${people.map(p => `<th>${esc(p.name)}</th>`).join("")}<th>Total</th><th>Moved</th><th>Handed off</th><th>On time</th></tr></thead>
+  <div class="tw"><table>
+    <thead><tr><th>Task</th>${people.map(p => `<th>${esc(p.name)}</th>`).join("")}<th>Total</th><th>Moved</th><th>Handed</th><th>On&nbsp;time</th></tr></thead>
     <tbody>${taskTableRows || `<tr><td colspan="${people.length + 5}">No completed tasks in this period.</td></tr>`}</tbody>
-  </table>
+  </table></div>
 
   <div class="foot">Made with Sparkle ${APP_VERSION} · a cleaning planner. Numbers cover ${esc(from)} → ${esc(to)}.</div>
 </div></body></html>`;
