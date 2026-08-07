@@ -497,7 +497,7 @@ table.stats th { letter-spacing: 0.09em; }
 "use strict";
 /* ================= state ================= */
 const KEY = "sparkle.v1";
-const APP_VERSION = "v16";  // bump together with the service-worker cache name
+const APP_VERSION = "v17";  // bump together with the service-worker cache name
 const DATA_VERSION = 3;    // on-disk data shape; bump when migrate() changes
 const MAX_PEOPLE = 8;
 // Person colour palette (8 slots). Each person stores an index into this list;
@@ -1321,23 +1321,26 @@ function buildReport(from, to, label) {
   const tookBy = id => overs.filter(x => x.to === id).length;
   const takenBy = id => overs.filter(x => x.from === id).length;
 
+  // per-task, per-person breakdown: done / on-time / moved / took over / handed over
   const byTask = new Map();
-  const ens = (t, ic) => { if (!byTask.has(t)) byTask.set(t, { icon: ic || "", per: {}, onFirst: 0, post: 0, over: 0 }); return byTask.get(t); };
-  for (const h of hist) { const r = ens(h.title, h.icon); r.per[h.person] = (r.per[h.person] || 0) + 1; if (h.onFirst) r.onFirst++; }
-  for (const p of post) ens(p.title).post++;
-  for (const x of overs) ens(x.title).over++;
-  const rowTot = r => ids.reduce((s, id) => s + (r.per[id] || 0), 0);
-  const rows = [...byTask.entries()].sort((a, b) => (rowTot(b[1]) + b[1].post) - (rowTot(a[1]) + a[1].post));
+  const ens = (t, ic) => { if (!byTask.has(t)) byTask.set(t, { icon: ic || "", done: {}, onTime: {}, moved: {}, took: {}, handed: {} }); return byTask.get(t); };
+  for (const h of hist) { const r = ens(h.title, h.icon); r.done[h.person] = (r.done[h.person] || 0) + 1; if (h.onFirst) r.onTime[h.person] = (r.onTime[h.person] || 0) + 1; }
+  for (const p of post) { const r = ens(p.title); r.moved[p.person] = (r.moved[p.person] || 0) + 1; }
+  for (const x of overs) { const r = ens(x.title); r.took[x.to] = (r.took[x.to] || 0) + 1; r.handed[x.from] = (r.handed[x.from] || 0) + 1; }
+  const sumObj = o => Object.values(o).reduce((a, b) => a + b, 0);
+  const taskTot = r => ids.reduce((s, id) => s + (r.done[id] || 0), 0);
+  const rows = [...byTask.entries()].sort((a, b) => (taskTot(b[1]) + sumObj(b[1].moved)) - (taskTot(a[1]) + sumObj(a[1].moved)));
 
+  const solo = ids.length < 2;
   const people = ids.map(id => ({ id, name: pname(id), c: pcHex(id) }));
   const dot = c => `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c};vertical-align:middle"></span>`;
   const sum = ids.reduce((s, id) => s + cntBy(id), 0) || 1;
 
+  // overall per-person summary (share % lives in the legend, so it's dropped here for width)
   const perPersonRows = people.map(p => `
     <tr>
       <td>${dot(p.c)} <strong>${esc(p.name)}</strong></td>
       <td>${cntBy(p.id)}</td>
-      <td>${Math.round(cntBy(p.id) / sum * 100)}%</td>
       <td>${cntBy(p.id) ? Math.round(ofBy(p.id) / cntBy(p.id) * 100) + "%" : "—"}</td>
       <td>${postBy(p.id)}</td>
       <td>${tookBy(p.id)}</td>
@@ -1345,17 +1348,27 @@ function buildReport(from, to, label) {
       <td>${(tookBy(p.id) - takenBy(p.id)) > 0 ? "+" : ""}${tookBy(p.id) - takenBy(p.id)}</td>
     </tr>`).join("");
 
-  const taskTableRows = rows.map(([title, r]) => `
-    <tr>
-      <td>${esc(title)}</td>
-      ${people.map(p => `<td>${r.per[p.id] || "·"}</td>`).join("")}
-      <td><strong>${rowTot(r)}</strong></td>
-      <td>${r.post || "·"}</td>
-      <td>${r.over || "·"}</td>
-      <td>${r.onFirst || "·"}</td>
-    </tr>`).join("");
-
-  const solo = ids.length < 2;
+  // one small table per task — people as rows, metrics as columns (fixed width,
+  // so the report only ever scrolls up/down regardless of household size)
+  const taskBlocks = rows.map(([title, r]) => {
+    const active = people.filter(p => (r.done[p.id] || r.onTime[p.id] || r.moved[p.id] || r.took[p.id] || r.handed[p.id]));
+    const show = active.length ? active : people;
+    const body = show.map(p => `
+      <tr>
+        <td>${dot(p.c)} ${esc(p.name)}</td>
+        <td>${r.done[p.id] || "·"}</td>
+        <td>${r.onTime[p.id] || "·"}</td>
+        <td>${r.moved[p.id] || "·"}</td>
+        ${solo ? "" : `<td>${r.took[p.id] || "·"}</td><td>${r.handed[p.id] || "·"}</td>`}
+      </tr>`).join("");
+    return `<div class="taskblock">
+      <div class="tbh"><span>${esc(title)}</span><span class="tbt">${taskTot(r)} done</span></div>
+      <div class="tw"><table>
+        <thead><tr><th>Person</th><th>Done</th><th>On&nbsp;time</th><th>Moved</th>${solo ? "" : "<th>Took</th><th>Handed</th>"}</tr></thead>
+        <tbody>${body}</tbody>
+      </table></div>
+    </div>`;
+  }).join("");
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sparkle report — ${esc(label)}</title>
 <style>
@@ -1380,6 +1393,10 @@ function buildReport(from, to, label) {
   @media (max-width: 560px) { body { padding: 18px 12px 36px; } th, td { padding: 5px 6px; font-size: 11.5px; } th { font-size: 9.5px; } h1 { font-size: 22px; } }
   .balance { display: flex; height: 14px; border-radius: 7px; overflow: hidden; gap: 2px; background: #eee; margin: 4px 0 8px; }
   .legend { font-size: 13px; color: #55534e; }
+  .taskblock { margin: 12px 0 16px; break-inside: avoid; }
+  .tbh { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .tbh > span:first-child { font-weight: 700; font-size: 14.5px; }
+  .tbt { font-weight: 600; color: #55534e; font-size: 12px; white-space: nowrap; }
   .foot { margin-top: 26px; color: #8e887c; font-size: 12px; text-align: center; }
 </style></head><body><div class="wrap">
   <div class="head">
@@ -1400,15 +1417,12 @@ function buildReport(from, to, label) {
   <div class="balance">${people.filter(p => cntBy(p.id) > 0).map(p => `<div style="flex:${cntBy(p.id)};background:${p.c}"></div>`).join("")}</div>
   <div class="legend">${people.map(p => `${dot(p.c)} ${esc(p.name)} — ${cntBy(p.id)} (${Math.round(cntBy(p.id) / sum * 100)}%)`).join(" &nbsp; ")}</div>
   <div class="tw"><table>
-    <thead><tr><th>Person</th><th>Done</th><th>Share</th><th>On&nbsp;time</th><th>Postp.</th><th>Took</th><th>Taken</th><th>Net</th></tr></thead>
+    <thead><tr><th>Person</th><th>Done</th><th>On&nbsp;time</th><th>Postp.</th><th>Took</th><th>Taken</th><th>Net</th></tr></thead>
     <tbody>${perPersonRows}</tbody>
   </table></div>`}
 
-  <h2>By task</h2>
-  <div class="tw"><table>
-    <thead><tr><th>Task</th>${people.map(p => `<th>${esc(p.name)}</th>`).join("")}<th>Total</th><th>Moved</th><th>Handed</th><th>On&nbsp;time</th></tr></thead>
-    <tbody>${taskTableRows || `<tr><td colspan="${people.length + 5}">No completed tasks in this period.</td></tr>`}</tbody>
-  </table></div>
+  <h2>By task · per person</h2>
+  ${taskBlocks || `<p style="color:#8e887c;font-size:13px">No completed tasks in this period.</p>`}
 
   <div class="foot">Made with Sparkle ${APP_VERSION} · a cleaning planner. Numbers cover ${esc(from)} → ${esc(to)}.</div>
 </div></body></html>`;
